@@ -1,0 +1,954 @@
+.setClass <- function(private, key, value, class, nullable = FALSE) {
+  checkmate::assert_class(x = value, classes = class, null.ok = nullable)
+  private[[key]] <- value
+  invisible(private)
+}
+
+.setString <- function(private, key, value, naOk = FALSE) {
+  checkmate::assert_string(x = value, na.ok = naOk, min.chars = 1, null.ok = FALSE)
+  private[[key]] <- value
+  invisible(private)
+}
+
+# Study Options Class -------------
+UlyssesStudy <- R6::R6Class(
+  classname = "UlyssesStudy",
+  public = list(
+    initialize = function(repoName,
+                          repoFolder,
+                          toolType = c("dbms", "external"),
+                          studyMeta,
+                          execOptions,
+                          gitRemote = NULL,
+                          renvLock = NULL
+    ) {
+
+      checkmate::assert_string(x = repoName, min.chars = 1)
+      private[[".repoName"]] <- repoName
+
+      checkmate::assert_string(x = repoFolder, min.chars = 1)
+      private[[".repoFolder"]] <- repoFolder
+
+      checkmate::assert_string(x = toolType, min.chars = 1)
+      private[[".toolType"]] <- toolType
+
+      .setClass(private = private, key = ".studyMeta", value = studyMeta, class = "StudyMeta")
+
+      .setClass(private = private,key = ".execOptions",value = execOptions,class = "ExecOptions")
+
+      checkmate::assert_string(x = gitRemote, null.ok = TRUE)
+      private[[".gitRemote"]] <- gitRemote
+
+      checkmate::assert_string(x = renvLock, null.ok = TRUE)
+      private[[".renvLock"]] <- renvLock
+    },
+
+    initUlyssesRepo = function(verbose, openProject) {
+
+      if (verbose) {
+        notification("Step 1: Creating R Project")
+      }
+      # make a path to repo
+      toolType <- private$.toolType
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand() |>
+        fs::dir_create() # make repo if it doesnt exist
+
+      ## Make local project
+      usethis::local_project(repoPath, force = TRUE)
+      private$.initRProj()
+
+      # Step 2: add standard ulysses folders
+      if (verbose) {
+        notification("Step 2: Adding Standard Ulysses Folders")
+      }
+
+      folders <- listDefaultFolders()
+
+      pp <- fs::path("./", folders) |>
+        fs::dir_create(recurse = TRUE)
+
+      # Step 3: make default files
+      if (verbose) {
+        notification("Step 3: Adding Standard Ulysses Files")
+      }
+
+      private$.initReadMe() #1 init read me
+      private$.initNews() # 2 init news
+      private$.initConfigFile() # 3 init config, if external make basic
+      private$.initQuarto() # 4 add the study hub stuff
+      private$.initMainExec() # 5 add the main.R file, if external make basic
+      #private$.initRenv() # 6 add the renv
+      private$.initGit() #initialize git locally this is the last step
+
+      if (openProject) {
+        notification("Opening project in new session")
+        rstudioapi::openProject(repoPath, newSession = TRUE)
+      }
+
+      invisible(repoPath)
+    }
+  ),
+  private = list(
+    .repoName = NULL,
+    .repoFolder = NULL,
+    .toolType = NULL,
+    .studyMeta = NULL,
+    .execOptions = NULL,
+    .gitRemote = NULL,
+    .renvLock = NULL,
+
+    #functions to build Files
+    .initRProj = function() {
+
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand()
+
+      projLines <- fs::path_package("picard", "templates/rproj.txt") |>
+        readr::read_file()
+
+      projFile <- fs::path(repoPath, repoName, ext = "Rproj")
+      readr::write_file(
+        x = projLines,
+        file = fs::path(projFile)
+      )
+      actionItem(glue::glue_col("Initializing {green {repoName}.Rproj}"))
+      usethis::use_git_ignore(
+        c(".Rproj.user", ".Ruserdata",
+          ".Rhistory", ".RData",
+          ".Renviron", "exec/results")
+      )
+      invisible(projFile)
+
+    },
+
+    .initReadMe = function() {
+
+      sm <- private$.studyMeta
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand()
+
+      initReadMeFn(sm = sm, repoName = repoName, repoPath = repoPath)
+    },
+
+    .initNews = function() {
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand()
+
+      initNewsFn(repoName = repoName, repoPath = repoPath)
+    },
+
+    .initConfigFile = function() {
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      toolType <- private$.toolType # get tool type to differ build
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand()
+
+      private$.execOptions$makeConfigFile(
+        repoName = repoName,
+        repoPath = repoPath,
+        toolType = toolType
+      )
+
+
+    },
+
+    .initGit = function() {
+
+      gitRemoteUrl <- private$.gitRemote
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      repoPath <- fs::path(repoFolder, repoName) |>
+        fs::path_expand()
+
+      #Step1: initialize git
+      gert::git_init(repoPath)
+
+      if (!is.null(gitRemoteUrl)) {
+
+        addGitRemoteToUlysses(
+          gitRemoteUrl = gitRemoteUrl,
+          gitRemoteName = "origin",
+          commitMessage = "Initialize Ulysses Repo for study"
+        )
+
+      } else {
+        # Step 2: add all files
+        stg <- gert::git_add(files = ".")
+        #step 3: commit all files
+        sha <- gert::git_commit_all(
+          message = "Initialize Ulysses Repo for study"
+        )
+      }
+
+      invisible(TRUE)
+    },
+
+    .initQuarto = function() {
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      studyTitle <- self$studyMeta$studyTitle
+
+      initStudyHubFiles(
+        repoName = repoName,
+        repoFolder = repoFolder,
+        studyTitle = self$studyMeta$studyTitle
+      )
+
+    },
+
+    .initMainExec = function() {
+
+      repoName <- private$.repoName
+      repoFolder <- private$.repoFolder
+      toolType <- private$.toolType # get tool type to differ build
+
+      # get elements
+      studyName <- private$.studyMeta$studyTitle
+      if (toolType == "dbms") {
+        configBlocks <- purrr::map_chr(
+          private$.execOptions$dbConnectionBlocks,
+          ~.x$configBlockName
+        )
+      } else {
+        configBlocks <- ""
+      }
+
+      addMainFile(
+        repoName = repoName,
+        repoFolder = repoFolder,
+        toolType = toolType,
+        configBlocks = configBlocks,
+        studyName = studyName
+      )
+    }
+  ),
+  active = list(
+
+    repoName = function(value) {
+      if(missing(value)) {
+        sm <- private$.repoName
+        return(sm)
+      }
+      checkmate::assert_string(x = value, min.chars = 1)
+      private[[".repoName"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('repoName')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+
+    repoFolder = function(value) {
+      if(missing(value)) {
+        sm <- private$.repoFolder
+        return(sm)
+      }
+      checkmate::assert_string(x = value, min.chars = 1)
+      private[[".repoFolder"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('repoFolder')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+
+    toolType = function(value) {
+      if(missing(value)) {
+        sm <- private$.toolType
+        return(sm)
+      }
+      checkmate::assert_string(x = value, min.chars = 1)
+      private[[".toolType"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('toolType')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+
+    studyMeta = function(value) {
+      if(missing(value)) {
+        sm <- private$.studyMeta
+        return(sm)
+      }
+      .setCkass(private = private, key = ".studyMeta", value = value, class = "StudyMeta")
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('studyMeta')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    gitRemote = function(value) {
+      if(missing(value)) {
+        sm <- private$.gitRemote
+        return(sm)
+      }
+      .setString(private = private, key = ".gitRemote", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('gitRemote')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    renvLock = function(value) {
+      if(missing(value)) {
+        sm <- private$.renvLock
+        return(sm)
+      }
+      .setString(private = private, key = ".renvLock", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('renvLock')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    }
+  )
+)
+
+# Sub options classes ------------
+
+# sub class for contributors in study meta
+# Contributor Line ---------------
+ContributorLine <- R6::R6Class(
+  classname = "ContributorLine",
+  public = list(
+    initialize = function(name, email, role) {
+      .setString(private = private, key = ".name", value = name)
+      .setString(private = private, key = ".email", value = email)
+      .setString(private = private, key = ".role", value = role)
+    },
+    printContributorLine = function() {
+      txt <- glue::glue("Name: {private$.name} | Email: {private$.email} | Role: {private$.role}")
+      return(txt)
+    }
+  ),
+  private = list(
+    .name = NA_character_,
+    .email = NA_character_,
+    .role = NA_character_
+  ),
+  active = list(
+    name = function(value) {
+      if(missing(value)) {
+        sm <- private$.name
+        return(sm)
+      }
+      .setString(private = private, key = ".name", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Contributor Name')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    email = function(value) {
+      if(missing(value)) {
+        sm <- private$.email
+        return(sm)
+      }
+      .setString(private = private, key = ".email", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Contributor Email')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    role = function(value) {
+      if(missing(value)) {
+        sm <- private$.role
+        return(sm)
+      }
+      .setString(private = private, key = ".role", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Contributor Role')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    }
+  )
+)
+
+# Study Meta ---------------
+StudyMeta <- R6::R6Class(
+  classname = "StudyMeta",
+  public = list(
+    initialize = function(studyTitle,
+                          therapeuticArea,
+                          studyType,
+                          contributors,
+                          studyLinks = NULL,
+                          studyTags = NULL) {
+      .setString(private = private, key = ".studyTitle", value = studyTitle)
+      .setString(private = private, key = ".therapeuticArea", value = therapeuticArea)
+      .setString(private = private, key = ".studyType", value = studyType)
+
+      checkmate::assert_character(x = studyLinks, null.ok = TRUE)
+      if (!is.null(studyLinks)) {
+        private[[".studyLinks"]] <- studyLinks
+      }
+
+
+      checkmate::assert_character(x = studyTags, null.ok = TRUE)
+      if (!is.null(studyTags)) {
+        private[[".studyTags"]] <- studyTags
+      }
+
+      checkmate::assert_list(x = contributors, min.len = 1, types = "ContributorLine")
+      private[[".contributors"]] <- contributors
+
+    },
+
+    listContributors = function() {
+      ctbs <- private$.contributors
+      ctbsList <- purrr::map(
+        private$.contributors,
+        ~glue::glue("- {.x$role}: {.x$name} (email: {.x$email})")
+      ) |>
+        glue::glue_collapse(sep = "\n")
+      ctbs2 <- c("## Contributors", ctbsList) |> glue::glue_collapse(sep = "\n\n")
+
+      return(ctbs2)
+    },
+
+    listStudyTags = function() {
+      tags <- private$.studyTags
+      if (length(tags) > 0) {
+        tagList <- purrr::map(
+          private$.studyTags,
+          ~glue::glue("\t* {.x}")
+        ) |>
+          glue::glue_collapse(sep = "\n")
+        tagList <- c("- Tags", tagList) |> glue::glue_collapse(sep = "\n")
+      } else {
+        tagList <- "- Tags (Please Add)"
+      }
+
+      return(tagList)
+    },
+
+    listStudyLinks = function() {
+      links <- private$.studyLinks
+      if (length(links) > 0) {
+        linksList <- purrr::map(
+          private$.studyLinks,
+          ~glue::glue("\t* {.x}")
+        ) |>
+          glue::glue_collapse(sep = "\n")
+        linksList <- c("## Resources", links) |> glue::glue_collapse(sep = "\n\n")
+      } else {
+        linksList <- c("## Resources", "<!-- Place study Links as needed -->") |> glue::glue_collapse(sep = "\n\n")
+      }
+
+      return(linksList)
+    }
+
+  ),
+  private = list(
+    .studyTitle = NULL,
+    .therapeuticArea = NULL,
+    .studyType = NULL,
+    .contributors = NULL,
+    .studyLinks = NULL,
+    .studyTags = NULL
+  ),
+  active = list(
+    studyTitle = function(value) {
+      if(missing(value)) {
+        sm <- private$.studyTitle
+        return(sm)
+      }
+      .setString(private = private, key = ".studyTitle", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('studyTitle')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    therapeuticArea = function(value) {
+      if(missing(value)) {
+        sm <- private$.therapeuticArea
+        return(sm)
+      }
+      .setString(private = private, key = ".therapeuticArea", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('therapeuticArea')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    studyType = function(value) {
+      if(missing(value)) {
+        sm <- private$.studyType
+        return(sm)
+      }
+      .setString(private = private, key = ".studyType", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('studyType')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    studyTags = function(value) {
+      if(missing(value)) {
+        sm <- private$.studyTags
+        return(sm)
+      }
+      checkmate::assert_character(x = value)
+      private[[".studyTags"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Study Tags')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    studyLinks = function(value) {
+      if(missing(value)) {
+        sm <- private$.studyLinks
+        return(sm)
+      }
+      checkmate::assert_character(x = value)
+      private[[".studyLinks"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Study Links')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    contributors = function(value) {
+      if(missing(value)) {
+        ctbs <- private$.contributors
+        return(ctbs)
+      }
+      checkmate::assert_list(x = value, min.len = 1, types = "ContributorLine")
+      private[[".contributors"]] <- value
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('Study Contributors')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    }
+  )
+)
+
+# Db Config Block -----------------------
+DbConfigBlock <- R6::R6Class(
+  classname = "DbConfigBlock",
+  public = list(
+    initialize = function(configBlockName,
+                          cdmDatabaseSchema,
+                          cohortTable,
+                          databaseName = NULL,
+                          databaseLabel = NULL) {
+
+      .setString(private = private, key = ".configBlockName", value = configBlockName)
+      .setString(private = private, key = ".cdmDatabaseSchema", value = cdmDatabaseSchema)
+      .setString(private = private, key = ".cohortTable", value = cohortTable)
+
+      checkmate::assert_string(x = databaseName, min.chars = 1, null.ok = TRUE)
+      if (is.null(databaseName)) {
+        private[[".databaseName"]] <- configBlockName
+      } else {
+        private[[".databaseName"]] <- databaseName
+      }
+
+
+      checkmate::assert_string(x = databaseLabel, min.chars = 1, null.ok = TRUE)
+      if (is.null(databaseName) & is.null(databaseLabel)) {
+        private[[".databaseLabel"]] <- configBlockName
+      } else if (!is.null(databaseName) & is.null(databaseLabel)) {
+        private[[".databaseLabel"]] <- databaseName
+      } else {
+        private[[".databaseLabel"]] <- databaseLabel
+      }
+    },
+
+    writeBlockSection = function(repoName, dbms, workSchema, tempSchema) {
+
+      configBlockName <- private$.configBlockName
+      databaseName <- private$.databaseName
+      databaseLabel <- private$.databaseLabel
+      cdmSchema <- private$.cdmDatabaseSchema
+      cohortTable <- private$.cohortTable
+
+      configBlock <- fs::path_package(package = "picard", "templates/configBlock.txt") |>
+        readr::read_file() |>
+        glue::glue()
+
+      return(configBlock)
+    }
+  ),
+  private = list(
+    .configBlockName = NULL,
+    .cdmDatabaseSchema = NULL,
+    .cohortTable = NULL,
+    .databaseName = NULL,
+    .databaseLabel = NULL
+  ),
+  active = list(
+    configBlockName = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.configBlockName
+        return(cds)
+      }
+      # replace the cdmDatabaseSchema
+      .setString(private = private, key = ".configBlockName", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('configBlockName')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    cdmDatabaseSchema = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.cdmDatabaseSchema
+        return(cds)
+      }
+      .setString(private = private, key = ".cdmDatabaseSchema", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('cdmDatabaseSchema')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    cohortTable = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.cohortTable
+        return(cds)
+      }
+      .setString(private = private, key = ".cohortTable", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('cohortTable')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    databaseName = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.databaseName
+        return(cds)
+      }
+      .setString(private = private, key = ".databaseName", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('databaseName')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    databaseLabel = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.databaseLabel
+        return(cds)
+      }
+      .setString(private = private, key = ".databaseLabel", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('databaseLabel')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    }
+  )
+)
+
+# Exec Options ---------------------
+ExecOptions <- R6::R6Class(
+  classname = "ExecOptions",
+  public = list(
+    initialize = function(
+    dbms = NULL,
+    workDatabaseSchema = NULL,
+    tempEmulationSchema = NULL,
+    dbConnectionBlocks = NULL) {
+
+      checkmate::assert_string(x = dbms, min.chars = 1, null.ok = TRUE)
+      if (!is.null(dbms)) {
+        private[[".dbms"]] <- dbms
+      }
+
+      checkmate::assert_string(x = workDatabaseSchema, min.chars = 1, null.ok = TRUE)
+      if (!is.null(workDatabaseSchema)) {
+        private[[".workDatabaseSchema"]] <- workDatabaseSchema
+      }
+
+      checkmate::assert_string(x = tempEmulationSchema, min.chars = 1, null.ok = TRUE)
+      if (!is.null(tempEmulationSchema)) {
+        private[[".tempEmulationSchema"]] <- tempEmulationSchema
+      }
+
+      checkmate::assert_list(x = dbConnectionBlocks, min.len = 1, types = "DbConfigBlock", null.ok = TRUE)
+      if (!is.null(dbConnectionBlocks)) {
+        private[[".dbConnectionBlocks"]] <- dbConnectionBlocks
+      }
+
+    },
+
+    makeConfigFile = function(repoName, repoPath, toolType) {
+      if(toolType == "dbms") {
+        dbBlocks <- vector('list', length = length(private$.dbConnectionBlocks))
+        for (i in seq_along(dbBlocks)) {
+          dbBlocks[[i]] <- private$.dbConnectionBlocks[[i]]$writeBlockSection(
+            repoName = repoName,
+            dbms = private$.dbms,
+            workSchema = private$.workDatabaseSchema,
+            tempSchema = private$.tempEmulationSchema
+          )
+        }
+        dbBlocks <- do.call('c', dbBlocks) |>
+          glue::glue_collapse(sep = "\n\n")
+      } else {
+        dbBlocks <- ""
+      }
+
+      header <- fs::path_package(package = "picard", "templates/configHeader.txt") |>
+        readr::read_file() |>
+        glue::glue()
+
+      configFile <- c(header, dbBlocks) |>
+        glue::glue_collapse(sep = "\n\n")
+
+      readr::write_lines(
+        x = configFile,
+        file = fs::path(repoPath, "config.yml")
+      )
+
+      actionItem(glue::glue_col("Initialize Config: {green {fs::path(repoPath, repoName, 'config.yml')}}"))
+      invisible(configFile)
+
+    }
+  ),
+  private = list(
+    .dbms = NULL,
+    .workDatabaseSchema = NULL,
+    .tempEmulationSchema = NULL,
+    .dbConnectionBlocks = NULL
+  ),
+  active = list(
+    dbms = function(value) {
+      if(missing(value)) {
+        sm <- private$.dbms
+        return(sm)
+      }
+      .setString(private = private, key = ".dbms", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('dbms')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    workDatabaseSchema = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        cds <- private$.workDatabaseSchema
+        return(cds)
+      }
+      # replace the workDatabaseSchema
+      .setString(private = private, key = ".workDatabaseSchema", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('workDatabaseSchema')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    tempEmulationSchema = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        tes <- private$.tempEmulationSchema
+        return(tes)
+      }
+      # replace the tempEmulationSchema
+      .setString(private = private, key = ".tempEmulationSchema", value = value)
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('tempEmulationSchema')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    },
+    dbConnectionBlocks = function(value) {
+      # return the value if nothing added
+      if(missing(value)) {
+        tes <- private$.dbConnectionBlocks
+        return(tes)
+      }
+      # replace the dbConnectionBlocks
+      checkmate::assert_list(x = value, min.len = 1, types = "DbConfigBlock")
+      private[[".dbConnectionBlocks"]] <- value
+
+      cli::cat_bullet(
+        glue::glue("Replaced {crayon::cyan('dbConnectionBlocks')} with {crayon::green(value)}"),
+        bullet = "info",
+        bullet_col = "blue"
+      )
+    }
+  )
+)
+
+
+listDefaultFolders <- function() {
+  analysisFolders <- c("src", "tasks", "migrations")
+  execFolders <- c('logs', 'results')
+  inputFolders <- c("cohorts/json", "cohorts/sql", "conceptSets/json")
+  disseminationFolders <- c("quarto", "export/pretty", "export/merge", "documents")
+
+
+  folders <- c(
+    paste('inputs', inputFolders, sep = "/"),
+    paste('analysis', analysisFolders, sep = "/"),
+    paste('exec', execFolders, sep = "/"),
+    paste('dissemination', disseminationFolders, sep = "/"),
+    'extras'
+  )
+  return(folders)
+}
+
+
+initReadMeFn <- function(sm, repoName, repoPath) {
+  # prep title
+  title <- glue::glue("# {sm$studyTitle} (Id: {repoName})")
+  # prep start badge
+  badge <- glue::glue(
+    "<!-- badge: start -->
+
+      ![Study Status: Started](https://img.shields.io/badge/Study%20Status-Started-blue.svg)
+      ![Version: 0.0.1](https://img.shields.io/badge/Version-0.0.1-yellow.svg)
+
+    <!-- badge: end -->"
+  )
+
+  # create tag list
+  tagList <- sm$listStudyTags()
+
+  # prep study info
+  info <-c(
+    "## Study Information",
+    glue::glue("- Study Id: {repoName}"),
+    glue::glue("- Study Title: {sm$studyTitle}"),
+    glue::glue("- Study Start Date: {lubridate::today()}"),
+    glue::glue("- Expected Study End Date: {lubridate::today() + (365 * 2)}"),
+    glue::glue("- Study Type: {sm$studyType}"),
+    glue::glue("- Therapeutic Area: {sm$therapeuticArea}"),
+    tagList
+  ) |>
+    glue::glue_collapse(sep = "\n")
+
+  # prep placeholder for desc
+  desc <- c(
+    "## Study Description",
+    "Add a short description about the study!"
+  ) |>
+    glue::glue_collapse(sep = "\n\n")
+
+  # prep contributors
+  contributors <- sm$listContributors()
+
+  # prep links
+  links <- sm$listStudyLinks()
+
+  # combine and save to README file
+  readmeLines <- c(
+    title,
+    badge,
+    info,
+    desc,
+    contributors,
+    links
+  ) |>
+    glue::glue_collapse(sep = "\n\n")
+
+  readr::write_lines(
+    x = readmeLines,
+    file = fs::path(repoPath, "README.md")
+  )
+
+  actionItem(glue::glue_col("Initialize Readme: {green {fs::path(repoPath, 'README.md')}}"))
+  invisible(readmeLines)
+}
+
+
+initNewsFn <- function(repoName, repoPath) {
+
+  header <- glue::glue("# {repoName} 0.0.1")
+  items <- c(
+    glue::glue("- Run Date: {lubridate::today()}"),
+    "- Initialize Ulysses Repo"
+  ) |>
+    glue::glue_collapse(sep = "\n")
+
+  newsLines <- c(header, items) |>
+    glue::glue_collapse(sep = "\n")
+  #cat(newsLines)
+
+  readr::write_lines(
+    x = newsLines,
+    file = fs::path(repoPath, "NEWS.md")
+  )
+
+  actionItem(glue::glue_col("Initialize NEWS: {green {fs::path(repoPath, 'NEWS.md')}}"))
+  invisible(newsLines)
+}
+
+updateNews <- function(versionNumber, projectPath = here::here(), openFile = TRUE) {
+
+  repoName <- basename(projectPath)
+  newsFile <- readr::read_file(file = fs::path(projectPath, "NEWS.md"))
+  newsHeader <- glue::glue("# {repoName} {versionNumber}\n\t-Run Date: {lubridate::today()}")
+  updateNewsFile <- c(newsHeader, newsFile) |> glue::glue_collapse(sep = "\n\n")
+  readr::write_file(updateNewsFile, file = fs::path(projectPath, "NEWS.md"))
+  actionItem(glue::glue_col("Update NEWS: {green {fs::path(projectPath, 'NEWS.md')}}"))
+  cli::cat_bullet(
+    "Please add a bulleted description of changes to the new version!!!",
+    bullet = "warning",
+    bullet_col = "yellow"
+  )
+  if (openFile) {
+    rstudioapi::navigateToFile(file = fs::path(projectPath, "NEWS.md"))
+    actionItem("Opening NEWS.md for edits")
+  }
+  invisible(updateNewsFile)
+}
+
+
+notification <- function(txt) {
+  cli::cat_bullet(
+    txt,
+    bullet = "info",
+    bullet_col = "blue"
+  )
+  invisible(txt)
+}
+
+actionItem <- function(txt) {
+  cli::cat_bullet(
+    txt,
+    bullet = "pointer",
+    bullet_col = "yellow"
+  )
+  invisible(txt)
+}
+
+
+writeFileAndNotify <- function(x, repoPath, fileName) {
+
+  filePath <- fs::path(repoPath, fileName)
+
+  readr::write_lines(
+    x = x,
+    file = filePath
+  )
+
+  actionItem(glue::glue_col("Write {green {fileName}} to: {cyan {filePath}}"))
+  invisible(filePath)
+}

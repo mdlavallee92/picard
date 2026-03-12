@@ -1,0 +1,46 @@
+---
+title: {studyTitle}
+subtitle: Evidence Generation Plan 
+date: last-modified
+format:
+  html:
+    fontsize: 14pt
+    number-sections: true
+    number-depth: 3
+    toc: true
+    toc-location: left
+    toc-depth: 2
+    toc-title: Contents
+    theme: cosmo
+    grid:
+      body-width: 2200px
+      sidebar-width: 200px
+      margin-width: 200px
+      gutter-width: 50px
+---
+
+# Background {{#sec-background}}
+
+## Rationale {{#sec-rationale}}
+
+**EXAMPLES PLEASE MODIFY**
+
+The purpose of this study is to characterize patients with disease x for an internal analysis.
+
+## Research Questions {{#sec-questions}}
+
+**EXAMPLES PLEASE MODIFY**
+
+- How many people can we identify with cohort 1?
+- How do we characterize patients in cohort 1 at baseline (-365 days to -1 day before the index date)?
+
+## Data Sources {{#sec-data}}
+
+
+# Cohort Definitions {{#sec-cohorts}}
+
+
+# Analysis {{#sec-analysis}}
+
+
+

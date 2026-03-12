@@ -1,0 +1,5 @@
+# Exec Config File for Ulysses Repo: {repoName}
+
+default:
+  projectName: {repoName}
+  version: 0.0.1
