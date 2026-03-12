@@ -54,12 +54,11 @@ CohortEntry <- R6::R6Class(
   ),
 
   public = list(
-    #' Initialize a new CohortEntry
+    #' @description Initialize a new CohortEntry
     #'
     #' @param label Character. The common name of the cohort.
     #' @param tags List. A named list of tags that give metadata about the cohort.
-    #' @param filePath Character. Path to the cohort file in inputs/cohorts folder
-    #'   (can be .json or .sql).
+    #' @param filePath Character. Path to the cohort file in inputs/cohorts folder (can be .json or .sql).
     initialize = function(label, tags = list(), filePath) {
       checkmate::assert_string(x = label, min.chars = 1)
       checkmate::assert_list(x = tags, names = "named")
@@ -78,35 +77,35 @@ CohortEntry <- R6::R6Class(
 
     #' Get the file path
     #'
-    #' @return Character. The file path.
+    #' @return Character. Relative path to the cohort file.
     getFilePath = function() {
       fs::path_rel(private$.filePath)
     },
 
     #' Get the generated SQL
     #'
-    #' @return Character. The SQL string.
+    #' @return Character. The SQL definition of the cohort.
     getSql = function() {
       private$.sql
     },
 
     #' Get the SQL hash
     #'
-    #' @return Character. The hash of the SQL string.
+    #' @return Character. MD5 hash of the current SQL definition.
     getHash = function() {
       private$.hash
     },
 
-    #' Get the SQL hash
+    #' Get the cohort ID
     #'
-    #' @return integer. The integer identifying the cohort in the cohort table.
+    #' @return Integer. The cohort ID, or NA_integer_ if not set.
     getId = function() {
       private$.id
     },
 
     #' Set the cohort ID (internal use)
     #'
-    #' @param id Integer. The ID to set.
+    #' @param id Integer. The cohort ID to set.
     setId = function(id) {
       checkmate::assert_int(x = id)
       private$.id <- id
@@ -114,7 +113,7 @@ CohortEntry <- R6::R6Class(
 
     #' Format tags as string
     #'
-    #' @return Character. Tags formatted as "name1: value1 | name2: value2"
+    #' @return Character. Tags formatted as "name: value | name: value".
     formatTagsAsString = function() {
       if (length(private$.tags) == 0) {
         return("")
@@ -132,23 +131,24 @@ CohortEntry <- R6::R6Class(
   ),
 
   active = list(
-    #' @field label Get or set the cohort label (active binding)
-    label = function(value) {
-      if (missing(value)) {
+
+    #' @field label character to set the label to. If missing, returns the current label.
+    label = function(label) {
+      if (missing(label)) {
         private[[".label"]]
       } else {
-        checkmate::assert_string(x = value, min.chars = 1)
-        private[[".label"]] <- value
+        checkmate::assert_string(x = label, min.chars = 1)
+        private[[".label"]] <- label
       }
     },
 
-    #' @field tags Get or set the cohort tags (active binding)
-    tags = function(value) {
-      if (missing(value)) {
+    #' @field tags list of the values to set the tags to. If missing, returns the current label.
+    tags = function(tags) {
+      if (missing(tags)) {
         private[[".tags"]]
       } else {
-        checkmate::assert_list(x = value)
-        private[[".tags"]] <- value
+        checkmate::assert_list(x = tags, names = "named")
+        private[[".tags"]] <- tags
       }
     }
   )
@@ -316,7 +316,7 @@ CohortManifest <- R6::R6Class(
   ),
 
   public = list(
-    #' Initialize a new CohortManifest
+    #' @description Initialize a new CohortManifest
     #'
     #' @param cohortEntries List. A list of CohortEntry objects.
     #' @param executionSettings Object. Execution settings for DBMS cohort generation.
@@ -586,7 +586,7 @@ CohortManifest <- R6::R6Class(
       return(manifest_df)
     },
 
-    #' Get number of cohorts in manifest
+    #' @description Get number of cohorts in manifest
     #'
     #' @return Integer. The number of cohorts.
     nCohorts = function() {
@@ -715,6 +715,7 @@ CohortManifest <- R6::R6Class(
     #' - tempEmulationSchema if needed for the database platform
     #'
     #' @return Data frame with execution results including cohort_id, label, execution_time_ms, and status
+    #' @noRd
     generateCohorts = function() {
       # Validate execution settings
       settings <- private$.executionSettings

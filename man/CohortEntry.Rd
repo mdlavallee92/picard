@@ -4,10 +4,14 @@
 \alias{CohortEntry}
 \title{CohortEntry R6 Class}
 \description{
-An R6 class that stores key information about CIRCE cohorts that need to be
-generated for a study.
+CohortEntry R6 Class
+
+CohortEntry R6 Class
 }
 \details{
+An R6 class that stores key information about CIRCE cohorts that need to be
+generated for a study.
+
 The CohortEntry class manages cohort metadata and SQL generation.
 Upon initialization, it loads and validates cohort definitions from either
 JSON (CIRCE format) or SQL files, and creates a hash to uniquely identify
@@ -16,9 +20,9 @@ the generated SQL.
 \section{Active bindings}{
 \if{html}{\out{<div class="r6-active-bindings">}}
 \describe{
-\item{\code{label}}{Get or set the cohort label (active binding)}
+\item{\code{label}}{character to set the label to. If missing, returns the current label.}
 
-\item{\code{tags}}{Get or set the cohort tags (active binding)}
+\item{\code{tags}}{list of the values to set the tags to. If missing, returns the current label.}
 }
 \if{html}{\out{</div>}}
 }
@@ -39,6 +43,7 @@ the generated SQL.
 \if{html}{\out{<a id="method-CohortEntry-new"></a>}}
 \if{latex}{\out{\hypertarget{method-CohortEntry-new}{}}}
 \subsection{Method \code{new()}}{
+Initialize a new CohortEntry
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CohortEntry$new(label, tags = list(), filePath)}\if{html}{\out{</div>}}
 }
@@ -50,8 +55,7 @@ the generated SQL.
 
 \item{\code{tags}}{List. A named list of tags that give metadata about the cohort.}
 
-\item{\code{filePath}}{Character. Path to the cohort file in inputs/cohorts folder
-(can be .json or .sql).
+\item{\code{filePath}}{Character. Path to the cohort file in inputs/cohorts folder (can be .json or .sql).
 Get the file path}
 }
 \if{html}{\out{</div>}}
@@ -66,7 +70,7 @@ Get the file path}
 }
 
 \subsection{Returns}{
-Character. The file path.
+Character. Relative path to the cohort file.
 Get the generated SQL
 }
 }
@@ -79,7 +83,7 @@ Get the generated SQL
 }
 
 \subsection{Returns}{
-Character. The SQL string.
+Character. The SQL definition of the cohort.
 Get the SQL hash
 }
 }
@@ -92,8 +96,8 @@ Get the SQL hash
 }
 
 \subsection{Returns}{
-Character. The hash of the SQL string.
-Get the SQL hash
+Character. MD5 hash of the current SQL definition.
+Get the cohort ID
 }
 }
 \if{html}{\out{<hr>}}
@@ -105,7 +109,7 @@ Get the SQL hash
 }
 
 \subsection{Returns}{
-integer. The integer identifying the cohort in the cohort table.
+Integer. The cohort ID, or NA_integer_ if not set.
 Set the cohort ID (internal use)
 }
 }
@@ -120,7 +124,7 @@ Set the cohort ID (internal use)
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{id}}{Integer. The ID to set.
+\item{\code{id}}{Integer. The cohort ID to set.
 Format tags as string}
 }
 \if{html}{\out{</div>}}
@@ -135,7 +139,7 @@ Format tags as string}
 }
 
 \subsection{Returns}{
-Character. Tags formatted as "name1: value1 | name2: value2"
+Character. Tags formatted as "name: value | name: value".
 }
 }
 \if{html}{\out{<hr>}}
