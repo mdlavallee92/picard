@@ -5,8 +5,7 @@
 #' @returns A ContributorLine R6 class with the contributor info
 #' @export
 setContributor <- function(name, email, role) {
-  contributorLine <- ContributorLine$new(name = name, email = email, role = role)
-  return(contributorLine)
+  ContributorLine$new(name = name, email = email, role = role)
 }
 
 #' @title Make Study Meta for Ulysses
@@ -23,7 +22,7 @@ makeStudyMeta <- function(studyTitle,
                           contributors,
                           studyLinks = NULL,
                           studyTags = NULL) {
-  sm <- StudyMeta$new(
+  StudyMeta$new(
     studyTitle = studyTitle,
     therapeuticArea = therapeuticArea,
     studyType = studyType,
@@ -31,8 +30,6 @@ makeStudyMeta <- function(studyTitle,
     studyLinks = studyLinks,
     studyTags = studyTags
   )
-
-  return(sm)
 }
 #' @title set the config block for a database
 #' @param configBlockName the name of the config block
@@ -47,12 +44,13 @@ setDbConfigBlock <- function(configBlockName,
                              cohortTable,
                              databaseName = NULL,
                              databaseLabel = NULL) {
-  dbConfigBlock <- DbConfigBlock$new(configBlockName = configBlockName,
-                                     cdmDatabaseSchema = cdmDatabaseSchema,
-                                     cohortTable,
-                                     databaseName = databaseName,
-                                     databaseLabel = databaseLabel)
-  return(dbConfigBlock)
+  DbConfigBlock$new(
+    configBlockName = configBlockName,
+    cdmDatabaseSchema = cdmDatabaseSchema,
+    cohortTable = cohortTable,
+    databaseName = databaseName,
+    databaseLabel = databaseLabel
+  )
 }
 
 #' @title set the execOptions as placeholder.
@@ -60,8 +58,7 @@ setDbConfigBlock <- function(configBlockName,
 #' @returns A ExecOptions R6 class with the execOptions
 #' @export
 placeHolderExecOptions <- function() {
-  execOptions <- ExecOptions$new()
-  return(execOptions)
+  ExecOptions$new()
 }
 
 
@@ -76,14 +73,12 @@ makeExecOptions <- function(dbms,
                             workDatabaseSchema,
                             tempEmulationSchema = NULL,
                             dbConnectionBlocks) {
-
-  execOptions <- ExecOptions$new(
+  ExecOptions$new(
     dbms = dbms,
     workDatabaseSchema = workDatabaseSchema,
     tempEmulationSchema = tempEmulationSchema,
     dbConnectionBlocks = dbConnectionBlocks
   )
-  return(execOptions)
 }
 
 
@@ -103,8 +98,7 @@ makeUlyssesStudySettings <- function(repoName,
                                      execOptions = NULL,
                                      gitRemote = NULL,
                                      renvLock = NULL) {
-
-  ulyStudy <- UlyssesStudy$new(
+  UlyssesStudy$new(
     repoName = repoName,
     repoFolder = repoFolder,
     toolType = toolType,
@@ -113,19 +107,10 @@ makeUlyssesStudySettings <- function(repoName,
     gitRemote = gitRemote,
     renvLock = renvLock
   )
-  return(ulyStudy)
-
 }
 
-#' @title Function to Launch new Ulysses Repo
-#' @param ulyssesStudySettings UlyssesStudy R6 class with the ulysses study details to make
-#' @param verbose a toggle whether to print details of launch in console
-#' @param openProject a toggle whether to open the repo as a new R project
-#' @returns invisible return. Creates the ulysses repo in the local file structure
-#' @export
-launchUlyssesRepo <- function(ulyssesStudySettings, verbose = TRUE, openProject = FALSE) {
-  ulyssesStudySettings$initUlyssesRepo(verbose = verbose, openProject = openProject)
-}
+# Users can call initUlyssesRepo directly on UlyssesStudy object:
+# ulyssesStudySettings$initUlyssesRepo(verbose = TRUE, openProject = FALSE)
 
 
 #' @title
@@ -148,14 +133,15 @@ createExecutionSettings <- function(connectionDetails,
                                     tempEmulationSchema,
                                     cohortTable,
                                     databaseName) {
-  executionSettings <- ExecutionSettings$new(connectionDetails = connectionDetails,
-                                             connection = connection,
-                                             cdmDatabaseSchema = cdmDatabaseSchema,
-                                             workDatabaseSchema = workDatabaseSchema,
-                                             tempEmulationSchema = tempEmulationSchema,
-                                             cohortTable = cohortTable,
-                                             databaseName = databaseName)
-  return(executionSettings)
+  ExecutionSettings$new(
+    connectionDetails = connectionDetails,
+    connection = connection,
+    cdmDatabaseSchema = cdmDatabaseSchema,
+    workDatabaseSchema = workDatabaseSchema,
+    tempEmulationSchema = tempEmulationSchema,
+    cohortTable = cohortTable,
+    databaseName = databaseName
+  )
 }
 
 #' @title Function initializing an R file for an analysis task
@@ -176,7 +162,7 @@ makeTaskFile <- function(
   dirF <- fs::dir_ls(path = analysisFolderPath, type = "file")
   nFiles <- length(dirF) + 1
   numLead <- stringr::str_pad(nFiles, width = 2, side = "left", pad = "0")
-  nameOfTask <- snakecase::to_lower_camel_case(nameOfTask)
+  nameOfTask <- snakecase::to_snake_case(nameOfTask)
   newName <- glue::glue("{numLead}_{nameOfTask}")
 
 
@@ -192,10 +178,15 @@ makeTaskFile <- function(
 
   taskTemplate <- fs::path_package(
     package = "picard",
-    glue::glue("templates/task.R")
+    "templates/task.R"
   ) |>
     readr::read_file() |>
-    glue::glue()
+    glue::glue(
+      taskName = taskName,
+      author = author,
+      description = description,
+      studyName = studyName
+    )
 
 
   txt <- glue::glue_col("Write {cyan {taskName}} to {yellow {analysisFolderPath}}")
