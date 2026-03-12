@@ -51,7 +51,7 @@ the generated SQL.
 \item{\code{tags}}{List. A named list of tags that give metadata about the cohort.}
 
 \item{\code{filePath}}{Character. Path to the cohort file in inputs/cohorts folder
-  (can be .json or .sql).
+(can be .json or .sql).
 Get the file path}
 }
 \if{html}{\out{</div>}}

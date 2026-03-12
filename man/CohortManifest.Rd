@@ -12,27 +12,26 @@ CohortManifest R6 Class
 An R6 class that manages a collection of CohortEntry objects and maintains
 metadata in a SQLite database.
 
-
 The CohortManifest class manages multiple cohort entries and stores their
 metadata in a SQLite database located at inputs/cohorts/cohortManifest.sqlite.
 Each CohortEntry is assigned a sequential ID based on its position in the manifest.
 
-
+Requires that executionSettings has been set and includes:
+\itemize{
+\item A database connection (via getConnection())
+\item workDatabaseSchema for the target schema
+\item cohortTable with the desired table name
+\item tempEmulationSchema if needed for the database platform
+}
 
 Requires that executionSettings has been set and includes:
-- A database connection (via getConnection())
-- workDatabaseSchema for the target schema
-- cohortTable with the desired table name
-- tempEmulationSchema if needed for the database platform
-
-
-
-Requires that executionSettings has been set and includes:
-- A database connection (via getConnection())
-- cdmDatabaseSchema (where the OMOP CDM data resides)
-- workDatabaseSchema (where cohort results are written)
-- cohortTable (destination table name)
-- tempEmulationSchema if needed for the database platform
+\itemize{
+\item A database connection (via getConnection())
+\item cdmDatabaseSchema (where the OMOP CDM data resides)
+\item workDatabaseSchema (where cohort results are written)
+\item cohortTable (destination table name)
+\item tempEmulationSchema if needed for the database platform
+}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -73,7 +72,7 @@ Can be any object type containing configuration for how cohorts should be execut
 on the target database.}
 
 \item{\code{dbPath}}{Character. Path to the SQLite database. Defaults to
-  "inputs/cohorts/cohortManifest.sqlite"
+"inputs/cohorts/cohortManifest.sqlite"
 Get the manifest as a data frame}
 }
 \if{html}{\out{</div>}}

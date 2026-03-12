@@ -94,7 +94,7 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
 
           # Backfill tags from database
           if (!is.na(tags_string) && tags_string != "") {
-            parsed_tags <- .parseTagsString(tags_string)
+            parsed_tags <- parseTagsString(tags_string)
             cohort_entry$tags <- parsed_tags
           }
 
@@ -664,14 +664,14 @@ launchCohortsLoadEditor <- function(cohortsFolderPath = here::here("inputs/cohor
 }
 
 
-#'
+#' Function to parse tags string from database into a named list
 #' @keywords internal
 #'
 #' @param tags_str Character. Tags string in format "name: value | name: value"
 #'
 #' @return List. Named list of tags
 #'
-.parseTagsString <- function(tags_str) {
+parseTagsString <- function(tags_str) {
   if (is.na(tags_str) || tags_str == "") {
     return(list())
   }
