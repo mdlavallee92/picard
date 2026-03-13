@@ -65,7 +65,7 @@ loadConceptSetManifest <- function(executionSettings = NULL,
     # Query existing concept sets from database
     existing_concept_sets <- DBI::dbGetQuery(
       conn,
-      "SELECT id, label, tags, sourceCode, domain, filePath, hash FROM concept_set_manifest"
+      "SELECT id, label, tags, filePath, hash FROM concept_set_manifest"
     )
 
     # Only load from manifest if it has entries
@@ -76,8 +76,6 @@ loadConceptSetManifest <- function(executionSettings = NULL,
       for (i in seq_len(nrow(existing_concept_sets))) {
         record <- existing_concept_sets[i, ]
         label <- record$label
-        source_code <- record$sourceCode
-        domain <- record$domain
         file_path <- record$filePath
         stored_hash <- record$hash
         tags_string <- record$tags
@@ -92,9 +90,7 @@ loadConceptSetManifest <- function(executionSettings = NULL,
           # Create ConceptSetDef from file (this computes current hash)
           concept_set_def <- ConceptSetDef$new(
             label = label,
-            filePath = file_path,
-            sourceCode = source_code,
-            domain = domain
+            filePath = file_path
         )
 
           # Backfill tags from database
@@ -139,8 +135,7 @@ loadConceptSetManifest <- function(executionSettings = NULL,
         tryCatch({
           concept_set_def <- ConceptSetDef$new(
             label = label,
-            filePath = file_path,
-            domain = "temp"  # Default domain, will be updated if conceptSetsLoad.csv has info
+            filePath = file_path
         )
           concept_set_entries[[length(concept_set_entries) + 1]] <- concept_set_def
           cli::cli_alert_success("Loaded concept set: {label}")
@@ -166,7 +161,7 @@ loadConceptSetManifest <- function(executionSettings = NULL,
       concept_sets_load <- readr::read_csv(concept_sets_load_path, show_col_types = FALSE)
 
       # Validate required columns (label is optional)
-      required_cols <- c("file_name", "atlasId", "category","domain", "sourceCode")
+      required_cols <- c("file_name", "atlasId", "category", "subCategory", "domain", "sourceCode")
       missing_cols <- setdiff(required_cols, names(concept_sets_load))
 
       if (length(missing_cols) == 0) {
@@ -202,6 +197,9 @@ loadConceptSetManifest <- function(executionSettings = NULL,
             }
             if (!is.na(load_record$sourceCode)) {
               entry_tags[["sourceCode"]] <- as.character(load_record$sourceCode)
+            }
+            if (!is.na(load_record$subCategory)) {
+              entry_tags[["subCategory"]] <- as.character(load_record$subCategory)
             }
 
             if (length(entry_tags) > 0) {

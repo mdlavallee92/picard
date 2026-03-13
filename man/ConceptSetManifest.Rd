@@ -70,7 +70,7 @@ Get the manifest as a data frame}
 }
 
 \subsection{Returns}{
-Data frame. The manifest with id, label, tags, filePath, domain, sourceCode, hash, and timestamp columns.
+Data frame. The manifest with id, label, tags, filePath, hash, and timestamp columns.
 Get the manifest path
 }
 }
@@ -116,7 +116,7 @@ Get a specific concept set by ID
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-Data frame. A subset of the manifest with columns id, label, tags, filePath, domain, sourceCode, hash, timestamp for the requested concept set.
+Data frame. A subset of the manifest with columns id, label, tags, filePath,  hash, timestamp for the requested concept set.
 Get concept sets by tag
 }
 }

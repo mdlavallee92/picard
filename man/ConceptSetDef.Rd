@@ -22,10 +22,6 @@ creates a hash to uniquely identify the generated JSON, and stores domain and so
 \item{\code{label}}{character to set the label to. If missing, returns the current label.}
 
 \item{\code{tags}}{list of the values to set the tags to. If missing, returns the current tags.}
-
-\item{\code{sourceCode}}{logical to set whether source codes are used. If missing, returns the current value.}
-
-\item{\code{domain}}{character to set the domain. If missing, returns the current domain.}
 }
 \if{html}{\out{</div>}}
 }
@@ -38,8 +34,6 @@ creates a hash to uniquely identify the generated JSON, and stores domain and so
 \item \href{#method-ConceptSetDef-getHash}{\code{ConceptSetDef$getHash()}}
 \item \href{#method-ConceptSetDef-getId}{\code{ConceptSetDef$getId()}}
 \item \href{#method-ConceptSetDef-setId}{\code{ConceptSetDef$setId()}}
-\item \href{#method-ConceptSetDef-getSourceCode}{\code{ConceptSetDef$getSourceCode()}}
-\item \href{#method-ConceptSetDef-getDomain}{\code{ConceptSetDef$getDomain()}}
 \item \href{#method-ConceptSetDef-formatTagsAsString}{\code{ConceptSetDef$formatTagsAsString()}}
 \item \href{#method-ConceptSetDef-clone}{\code{ConceptSetDef$clone()}}
 }
@@ -50,7 +44,7 @@ creates a hash to uniquely identify the generated JSON, and stores domain and so
 \subsection{Method \code{new()}}{
 Initialize a new ConceptSetDef
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ConceptSetDef$new(label, tags = list(), filePath, sourceCode = FALSE, domain)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetDef$new(label, tags = list(), filePath, domain = "init")}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -62,11 +56,11 @@ Initialize a new ConceptSetDef
 
 \item{\code{filePath}}{Character. Path to the concept set JSON file in inputs/conceptSet folder.}
 
-\item{\code{sourceCode}}{Logical. Whether the concept set uses source concepts (TRUE) or standard concepts (FALSE).}
-
 \item{\code{domain}}{Character. The OMOP CDM clinical domain for this concept set.
-Valid values: "drug_exposure", "condition_occurrence", "measurement", "procedure".
+Valid values: "drug_exposure", "condition_occurrence", "measurement", "procedure", "observation", "device_exposure", "visit_occurrence", "init".
 Get the file path}
+
+\item{\code{sourceCode}}{Logical. Whether the concept set uses source concepts (TRUE) or standard concepts (FALSE).}
 }
 \if{html}{\out{</div>}}
 }
@@ -135,35 +129,9 @@ Set the concept set ID (internal use)
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{id}}{Integer. The concept set ID to set.
-Get the source code flag}
+Format tags as string}
 }
 \if{html}{\out{</div>}}
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ConceptSetDef-getSourceCode"></a>}}
-\if{latex}{\out{\hypertarget{method-ConceptSetDef-getSourceCode}{}}}
-\subsection{Method \code{getSourceCode()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ConceptSetDef$getSourceCode()}\if{html}{\out{</div>}}
-}
-
-\subsection{Returns}{
-Logical. Whether the concept set uses source codes.
-Get the domain
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ConceptSetDef-getDomain"></a>}}
-\if{latex}{\out{\hypertarget{method-ConceptSetDef-getDomain}{}}}
-\subsection{Method \code{getDomain()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ConceptSetDef$getDomain()}\if{html}{\out{</div>}}
-}
-
-\subsection{Returns}{
-Character. The OMOP CDM domain for this concept set.
-Format tags as string
 }
 }
 \if{html}{\out{<hr>}}

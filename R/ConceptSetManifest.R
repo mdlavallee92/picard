@@ -18,8 +18,6 @@ ConceptSetDef <- R6::R6Class(
     .json = NULL,
     .hash = NULL,
     .id = NULL,
-    .sourceCode = NULL,
-    .domain = NULL,
 
     # Load JSON from file
     load_json_from_file = function(filePath) {
@@ -60,26 +58,22 @@ ConceptSetDef <- R6::R6Class(
     #' @param filePath Character. Path to the concept set JSON file in inputs/conceptSet folder.
     #' @param sourceCode Logical. Whether the concept set uses source concepts (TRUE) or standard concepts (FALSE).
     #' @param domain Character. The OMOP CDM clinical domain for this concept set. 
-    #'   Valid values: "drug_exposure", "condition_occurrence", "measurement", "procedure".
-    initialize = function(label, tags = list(), filePath, sourceCode = FALSE, domain) {
+    #'   Valid values: "drug_exposure", "condition_occurrence", "measurement", "procedure", "observation", "device_exposure", "visit_occurrence", "init".
+    initialize = function(label, tags = list(), filePath, domain = "init") {
       checkmate::assert_string(x = label, min.chars = 1)
       checkmate::assert_list(x = tags, names = "named")
       checkmate::assert_file_exists(x = filePath)
-      checkmate::assert_logical(x = sourceCode, len = 1)
-      checkmate::assert_string(x = domain, min.chars = 1)
 
       # Validate domain
       valid_domains <- c("drug_exposure", "condition_occurrence", "measurement", "procedure", 
-        "observation", "device_exposure", "visit_occurrence", "temp")
+        "observation", "device_exposure", "visit_occurrence", "init")
       if (!(domain %in% valid_domains)) {
         stop("Invalid domain '", domain, "'. Valid domains: ", paste(valid_domains, collapse = ", "))
       }
-
+      tags <- c(tags, list(domain = domain))
       private$.label <- label
       private$.tags <- tags
       private$.filePath <- filePath
-      private$.sourceCode <- sourceCode
-      private$.domain <- domain
 
       # Load JSON and generate hash
       private$load_json_from_file(filePath)
@@ -124,20 +118,6 @@ ConceptSetDef <- R6::R6Class(
       private$.id <- id
     },
 
-    #' Get the source code flag
-    #'
-    #' @return Logical. Whether the concept set uses source codes.
-    getSourceCode = function() {
-      private$.sourceCode
-    },
-
-    #' Get the domain
-    #'
-    #' @return Character. The OMOP CDM domain for this concept set.
-    getDomain = function() {
-      private$.domain
-    },
-
     #' Format tags as string
     #'
     #' @return Character. Tags formatted as "name: value | name: value".
@@ -175,30 +155,6 @@ ConceptSetDef <- R6::R6Class(
       } else {
         checkmate::assert_list(x = tags, names = "named")
         private[[".tags"]] <- tags
-      }
-    },
-
-    #' @field sourceCode logical to set whether source codes are used. If missing, returns the current value.
-    sourceCode = function(sourceCode) {
-      if (missing(sourceCode)) {
-        private[[".sourceCode"]]
-      } else {
-        checkmate::assert_logical(x = sourceCode, len = 1)
-        private[[".sourceCode"]] <- sourceCode
-      }
-    },
-
-    #' @field domain character to set the domain. If missing, returns the current domain.
-    domain = function(domain) {
-      if (missing(domain)) {
-        private[[".domain"]]
-      } else {
-        checkmate::assert_string(x = domain, min.chars = 1)
-        valid_domains <- c("drug_exposure", "condition_occurrence", "measurement", "procedure")
-        if (!(domain %in% valid_domains)) {
-          stop("Invalid domain '", domain, "'. Valid domains: ", paste(valid_domains, collapse = ", "))
-        }
-        private[[".domain"]] <- domain
       }
     }
   )
@@ -249,8 +205,6 @@ ConceptSetManifest <- R6::R6Class(
             label TEXT NOT NULL,
             tags TEXT,
             filePath TEXT NOT NULL,
-            domain TEXT,
-            sourceCode LOGICAL,
             hash TEXT NOT NULL,
             timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
           )"
@@ -285,14 +239,12 @@ ConceptSetManifest <- R6::R6Class(
 
           DBI::dbExecute(
             conn,
-            "INSERT INTO concept_set_manifest (id, label, tags, filePath, domain, sourceCode, hash, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            "INSERT INTO concept_set_manifest (id, label, tags, filePath, hash, timestamp) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
             list(
               concept_set$getId(),
               concept_set$label,
               concept_set$formatTagsAsString(),
               concept_set$getFilePath(),
-              concept_set$getDomain(),
-              concept_set$getSourceCode(),
               concept_set$getHash()
             )
           )
@@ -325,14 +277,12 @@ ConceptSetManifest <- R6::R6Class(
             # New concept set entry, insert it
             DBI::dbExecute(
               conn,
-              "INSERT INTO concept_set_manifest (id, label, tags, filePath, domain, sourceCode, hash, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+              "INSERT INTO concept_set_manifest (id, label, tags, filePath, hash, timestamp) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
               list(
                 cs_id,
                 concept_set$label,
                 concept_set$formatTagsAsString(),
                 concept_set$getFilePath(),
-                concept_set$getDomain(),
-                concept_set$getSourceCode(),
                 new_hash
               )
             )
@@ -343,13 +293,11 @@ ConceptSetManifest <- R6::R6Class(
             # Hash has changed, update the record and timestamp
             DBI::dbExecute(
               conn,
-              "UPDATE concept_set_manifest SET label = ?, tags = ?, filePath = ?, domain = ?, sourceCode = ?, hash = ?, timestamp = CURRENT_TIMESTAMP WHERE id = ?",
+              "UPDATE concept_set_manifest SET label = ?, tags = ?, filePath = ?, hash = ?, timestamp = CURRENT_TIMESTAMP WHERE id = ?",
               list(
                 concept_set$label,
                 concept_set$formatTagsAsString(),
                 concept_set$getFilePath(),
-                concept_set$getDomain(),
-                concept_set$getSourceCode(),
                 new_hash,
                 cs_id
               )
@@ -409,12 +357,12 @@ ConceptSetManifest <- R6::R6Class(
 
     #' Get the manifest as a data frame
     #'
-    #' @return Data frame. The manifest with id, label, tags, filePath, domain, sourceCode, hash, and timestamp columns.
+    #' @return Data frame. The manifest with id, label, tags, filePath, hash, and timestamp columns.
     getManifest = function() {
       conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
       on.exit(DBI::dbDisconnect(conn))
       man <- DBI::dbGetQuery(
-          conn, "SELECT id, label, tags, filePath, domain, sourceCode, hash, timestamp FROM concept_set_manifest ORDER BY id"
+          conn, "SELECT id, label, tags, filePath, hash, timestamp FROM concept_set_manifest ORDER BY id"
       ) 
       return(man)
     },
@@ -437,7 +385,7 @@ ConceptSetManifest <- R6::R6Class(
     #'
     #' @param id Integer. The concept set ID.
     #'
-    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, domain, sourceCode, hash, timestamp for the requested concept set.
+    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath,  hash, timestamp for the requested concept set.
     getConceptSetById = function(id) {
       checkmate::assert_int(x = id)
 
@@ -475,8 +423,6 @@ ConceptSetManifest <- R6::R6Class(
         label = concept_set_obj$label,
         tags = concept_set_obj$formatTagsAsString(),
         filePath = concept_set_obj$getFilePath(),
-        domain = concept_set_obj$getDomain(),
-        sourceCode = concept_set_obj$getSourceCode(),
         hash = concept_set_obj$getHash(),
         timestamp = timestamp,
         stringsAsFactors = FALSE
@@ -523,8 +469,6 @@ ConceptSetManifest <- R6::R6Class(
         label = character(),
         tags = character(),
         filePath = character(),
-        domain = character(),
-        sourceCode = logical(),
         hash = character(),
         timestamp = character(),
         stringsAsFactors = FALSE
@@ -536,8 +480,6 @@ ConceptSetManifest <- R6::R6Class(
           label = concept_set$label,
           tags = concept_set$formatTagsAsString(),
           filePath = concept_set$getFilePath(),
-          domain = concept_set$getDomain(),
-          sourceCode = concept_set$getSourceCode(),
           hash = concept_set$getHash(),
           timestamp = NA_character_,
           stringsAsFactors = FALSE
@@ -603,8 +545,6 @@ ConceptSetManifest <- R6::R6Class(
         label = character(),
         tags = character(),
         filePath = character(),
-        domain = character(),
-        sourceCode = logical(),
         hash = character(),
         timestamp = character(),
         stringsAsFactors = FALSE
@@ -616,8 +556,6 @@ ConceptSetManifest <- R6::R6Class(
           label = concept_set$label,
           tags = concept_set$formatTagsAsString(),
           filePath = concept_set$getFilePath(),
-          domain = concept_set$getDomain(),
-          sourceCode = concept_set$getSourceCode(),
           hash = concept_set$getHash(),
           timestamp = NA_character_,
           stringsAsFactors = FALSE
