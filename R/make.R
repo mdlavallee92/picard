@@ -1,4 +1,5 @@
 #' @title Set Ulysses Contributor
+#' @importFrom rlang "%||%"
 #' @param name the name of the contributor as a character string
 #' @param email the email of the contributor as a character string
 #' @param role the role of the contirbutor as a character string
@@ -143,6 +144,171 @@ createExecutionSettings <- function(connectionDetails,
     databaseName = databaseName
   )
 }
+
+#' @title Create ExecutionSettings from Config Block
+#' @description Load database connection details and execution parameters from a config.yml file
+#'   and create both connectionDetails and ExecutionSettings objects. Supports multiple DBMS types
+#'   including Snowflake with connectionString, PostgreSQL with server/port, and others.
+#' @param configBlock Character. The name of the config block to load (e.g., "optum_dod")
+#' @param configFilePath Character. Path to the config.yml file. If NULL, looks for config.yml in the current directory.
+#' @param cdmDatabaseSchema Character. The schema containing the OMOP CDM (overrides config value if provided)
+#' @param workDatabaseSchema Character. The schema for writing results (overrides config value if provided)
+#' @param tempEmulationSchema Character. Schema for temp table emulation (overrides config value if provided)
+#' @param cohortTable Character. The name of the cohort table (overrides config value if provided)
+#' @param databaseName Character. Human-readable database name (overrides config value if provided)
+#'
+#' @details
+#' The config.yml file supports multiple DBMS connection styles:
+#'
+#' For Snowflake (using connectionString):
+#' \preformatted{
+#' optum_dod:
+#'   dbms: snowflake
+#'   connectionString: !expr Sys.getenv('dbConnectionString')
+#'   user: !expr Sys.getenv('dbUser')
+#'   password: !expr Sys.getenv('dbPassword')
+#'   cdmDatabaseSchema: my_schema
+#'   workDatabaseSchema: results_schema
+#'   tempEmulationSchema: temp_schema
+#'   cohortTable: cohort
+#'   databaseName: Optum DOD
+#' }
+#'
+#' For PostgreSQL (using server/port):
+#' \preformatted{
+#' database1:
+#'   dbms: postgresql
+#'   server: localhost
+#'   port: 5432
+#'   user: dbuser
+#'   password: dbpass
+#'   cdmDatabaseSchema: public
+#'   workDatabaseSchema: results
+#'   cohortTable: cohort
+#'   databaseName: My Database
+#' }
+#'
+#' The config package automatically evaluates !expr blocks using Sys.getenv() for environment variables.
+#'
+#' @return An ExecutionSettings object with populated connectionDetails
+#' @export
+createExecutionSettingsFromConfig <- function(
+    configBlock,
+    configFilePath = here::here("config.yml"),
+    cdmDatabaseSchema = NULL,
+    workDatabaseSchema = NULL,
+    tempEmulationSchema = NULL,
+    cohortTable = NULL,
+    databaseName = NULL) {
+
+  if (!file.exists(configFilePath)) {
+    stop("Config file not found: ", configFilePath)
+  }
+
+  # Get the config block
+  blockConfig <- tryCatch(
+    config::get(config = configBlock, file = configFilePath),
+    error = function(e) {
+      stop("Config block '", configBlock, "' not found in ", configFilePath, "\n",
+           "Error: ", e$message)
+    }
+  )
+
+  # Extract database connection parameters
+  dbms <- blockConfig$dbms
+  if (is.null(dbms)) {
+    stop("'dbms' not found in config block '", configBlock, "'")
+  }
+
+  # Prepare connectionDetails based on DBMS type
+  connDetailsArgs <- list(dbms = dbms)
+
+  # Handle Snowflake-specific connection (uses connectionString)
+  if (tolower(dbms) == "snowflake") {
+    connectionString <- blockConfig$connectionString
+    if (is.null(connectionString)) {
+      stop("'connectionString' not found in Snowflake config block '", configBlock, "'")
+    }
+    connDetailsArgs$connectionString <- connectionString
+  } else {
+    # Handle other DBMS types (server/port style)
+    server <- blockConfig$server %||% NA
+    port <- blockConfig$port %||% NA
+
+    if (!is.na(server)) {
+      connDetailsArgs$server <- server
+    }
+    if (!is.na(port)) {
+      connDetailsArgs$port <- port
+    }
+  }
+
+  # Add credentials (common to all DBMS)
+  user <- blockConfig$user %||% NA
+  password <- blockConfig$password %||% NA
+
+  if (!is.na(user)) {
+    connDetailsArgs$user <- user
+  }
+  if (!is.na(password)) {
+    connDetailsArgs$password <- password
+  }
+
+  # Add optional extra settings
+  extraSettings <- blockConfig$extraSettings %||% NULL
+  if (!is.null(extraSettings)) {
+    connDetailsArgs$extraSettings <- extraSettings
+  }
+
+  # Create connectionDetails using DatabaseConnector
+  connectionDetails <- tryCatch(
+    do.call(DatabaseConnector::createConnectionDetails, connDetailsArgs),
+    error = function(e) {
+      stop("Failed to create connectionDetails for '", configBlock, "': ", e$message)
+    }
+  )
+
+  # Override with explicit parameters if provided, otherwise use config values
+  if (is.null(cdmDatabaseSchema)) {
+    cdmDatabaseSchema <- blockConfig$cdmDatabaseSchema %||% NA
+  }
+  if (is.null(workDatabaseSchema)) {
+    workDatabaseSchema <- blockConfig$workDatabaseSchema %||% NA
+  }
+  if (is.null(tempEmulationSchema)) {
+    tempEmulationSchema <- blockConfig$tempEmulationSchema %||% NA
+  }
+  if (is.null(cohortTable)) {
+    cohortTable <- blockConfig$cohortTable %||% NA
+  }
+  if (is.null(databaseName)) {
+    databaseName <- blockConfig$databaseName %||% NA
+  }
+
+  # Validate required fields
+  if (is.na(cdmDatabaseSchema)) {
+    stop("'cdmDatabaseSchema' not specified in config or as parameter")
+  }
+  if (is.na(workDatabaseSchema)) {
+    stop("'workDatabaseSchema' not specified in config or as parameter")
+  }
+  if (is.na(cohortTable)) {
+    stop("'cohortTable' not specified in config or as parameter")
+  }
+
+  # Create and return ExecutionSettings
+  ExecutionSettings$new(
+    connectionDetails = connectionDetails,
+    connection = NULL,
+    cdmDatabaseSchema = cdmDatabaseSchema,
+    workDatabaseSchema = workDatabaseSchema,
+    tempEmulationSchema = if (is.na(tempEmulationSchema)) NULL else tempEmulationSchema,
+    cohortTable = cohortTable,
+    databaseName = databaseName
+  )
+}
+
+
 
 #' @title Function initializing an R file for an analysis task
 #' @param nameOfTask The name of the analysis task script

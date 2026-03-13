@@ -593,6 +593,98 @@ CohortManifest <- R6::R6Class(
       length(private$.manifest)
     },
 
+    #' Grab a specific cohort by ID
+    #'
+    #' @param id Integer. The cohort ID.
+    #'
+    #' @return CohortEntry. The CohortEntry object with matching ID, or NULL if not found.
+    grabCohortById = function(id) {
+      checkmate::assert_int(x = id)
+
+      for (cohort in private$.manifest) {
+        if (cohort$getId() == id) {
+          return(cohort)
+        }
+      }
+
+      cli::cli_alert_warning("Cohort with ID {id} not found")
+      return(NULL)
+    },
+
+    #' Grab cohorts by tag
+    #'
+    #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
+    #'
+    #' @return List. A list of CohortEntry objects with matching tags, or NULL if none found.
+    grabCohortsByTag = function(tagString) {
+      checkmate::assert_string(x = tagString, min.chars = 1)
+
+      # Parse the tag string to extract name and value
+      tag_parts <- strsplit(tagString, ":\\s*")[[1]]
+      if (length(tag_parts) != 2) {
+        stop("Tag must be in the format 'name: value'")
+      }
+
+      tag_name <- trimws(tag_parts[1])
+      tag_value <- trimws(tag_parts[2])
+
+      matching_cohorts <- list()
+
+      # Search through manifest for matching tags
+      for (cohort in private$.manifest) {
+        cohort_tags <- cohort$tags
+        if (!is.null(cohort_tags) && tag_name %in% names(cohort_tags)) {
+          if (cohort_tags[[tag_name]] == tag_value) {
+            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
+          }
+        }
+      }
+
+      if (length(matching_cohorts) == 0) {
+        cli::cli_alert_warning("No cohorts found with tag '{tag_name}: {tag_value}'")
+        return(NULL)
+      }
+
+      return(matching_cohorts)
+    },
+
+    #' Grab cohorts by label
+    #'
+    #' @param label Character. The label to search for.
+    #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
+    #'   Defaults to "exact".
+    #'
+    #' @return List. A list of CohortEntry objects with matching labels, or NULL if none found.
+    grabCohortsByLabel = function(label, matchType = c("exact", "pattern")) {
+      checkmate::assert_string(x = label, min.chars = 1)
+      matchType <- match.arg(matchType)
+
+      matching_cohorts <- list()
+
+      # Search through manifest for matching labels
+      for (cohort in private$.manifest) {
+        cohort_label <- cohort$label
+
+        if (matchType == "exact") {
+          if (cohort_label == label) {
+            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
+          }
+        } else if (matchType == "pattern") {
+          # Use grepl for pattern matching (case-insensitive)
+          if (grepl(label, cohort_label, ignore.case = TRUE)) {
+            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
+          }
+        }
+      }
+
+      if (length(matching_cohorts) == 0) {
+        cli::cli_alert_warning("No cohorts found with {matchType} label match '{label}'")
+        return(NULL)
+      }
+
+      return(matching_cohorts)
+    },
+
     #' Create cohort tables in the database
     #'
     #' @description
@@ -642,7 +734,8 @@ CohortManifest <- R6::R6Class(
         cohortInclusionTable = paste0(cohort_table, "_inclusion"),
         cohortInclusionResultTable = paste0(cohort_table, "_inclusion_result"),
         cohortInclusionStatsTable = paste0(cohort_table, "_inclusion_stats"),
-        cohortSummaryStatsTable = paste0(cohort_table, "_summary_stats")
+        cohortSummaryStatsTable = paste0(cohort_table, "_summary_stats"),
+        cohortCensorStatsTable = paste0(cohort_table, "_censor_stats")
       )
 
       cli::cli_rule("Creating Cohort Tables")
@@ -656,6 +749,7 @@ CohortManifest <- R6::R6Class(
         inclusion_result = list(name = table_names$cohortInclusionResultTable, type = "inclusion_result"),
         inclusion_stats = list(name = table_names$cohortInclusionStatsTable, type = "inclusion_stats"),
         summary_stats = list(name = table_names$cohortSummaryStatsTable, type = "summary_stats"),
+        censor_stats = list(name = table_names$cohortCensorStatsTable, type = "censor_stats"),
         checksum = list(name = table_names$cohortChecksumTable, type = "checksum")
       )
 
@@ -679,6 +773,8 @@ CohortManifest <- R6::R6Class(
             sql <- createInclusionStatsTableSql(schema, table_name, dbms)
           } else if (table_type == "summary_stats") {
             sql <- createSummaryStatsTableSql(schema, table_name, dbms)
+          } else if (table_type == "censor_stats") {
+            sql <- createCensorStatsTableSql(schema, table_name, dbms)
           } else if (table_type == "checksum") {
             sql <- createChecksumTableSql(schema, table_name, dbms)
           }
@@ -819,16 +915,23 @@ CohortManifest <- R6::R6Class(
         # Generate the cohort
         cli::cli_alert_info("Generating cohort {cohort_id}: {cohort_label}...")
 
-        # Get the SQL from the cohort entry
+        # Get the SQL from the cohortEntry class
         cohort_sql <- cohort$getSql()
 
         # Render the SQL with required parameters
         rendered_sql <- SqlRender::render(
           sql = cohort_sql,
           cdm_database_schema = cdm_schema,
+          vocabulary_database_schema = cdm_schema,
           target_database_schema = cohort_schema,
           target_cohort_table = cohort_table,
-          target_cohort_id = cohort_id
+          target_cohort_id = cohort_id,
+          results_database_schema.cohort_inclusion = paste(cohort_schema, table_names$cohortInclusionTable, sep = "."),
+          results_database_schema.cohort_inclusion_result = paste(cohort_schema, table_names$cohortInclusionResultTable, sep = "."),
+          results_database_schema.cohort_inclusion_stats = paste(cohort_schema, table_names$cohortInclusionStatsTable, sep = "."),
+          results_database_schema.cohort_summary_stats = paste(cohort_schema, table_names$cohortSummaryStatsTable, sep = "."),
+          results_database_schema.cohort_censor_stats = paste(cohort_schema, table_names$cohortCensorStatsTable, sep = "."),
+          warnOnMissingParameters = FALSE
         )
 
         # Translate to target dialect
@@ -844,7 +947,7 @@ CohortManifest <- R6::R6Class(
           DatabaseConnector::executeSql(
             conn,
             translated_sql,
-            progressBar = FALSE,
+            progressBar = TRUE,
             reportOverallTime = FALSE
           )
         }, silent = TRUE)
@@ -1113,6 +1216,38 @@ createSummaryStatsTableSql <- function(schema, tableName, dbms) {
     base_count INT,
     final_count INT,
     rule_count INT
+  );"
+
+  sql <- SqlRender::render(
+    sql = sql,
+    schema = schema,
+    table_name = tableName
+  )
+
+  sql <- SqlRender::translate(
+    sql = sql,
+    targetDialect = dbms
+  )
+
+  return(sql)
+}
+
+#' Create censor stats table SQL
+#'
+#' @description Generates SQL to create the cohort censor stats table for tracking censoring events
+#'
+#' @param schema Character. Database schema name
+#' @param tableName Character. Table name
+#' @param dbms Character. Database management system type
+#'
+#' @return Character. SQL statement
+#'
+createCensorStatsTableSql <- function(schema, tableName, dbms) {
+  sql <- "CREATE TABLE @schema.@table_name (
+    cohort_definition_id INT,
+    loss_event_id INT,
+    loss_date DATE,
+    person_count INT
   );"
 
   sql <- SqlRender::render(
