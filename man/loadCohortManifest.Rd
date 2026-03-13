@@ -37,7 +37,7 @@ the stored hash with the current file hash.
 
 \strong{If database doesn't exist:}
 Scans \code{cohortsFolderPath/json} and \code{cohortsFolderPath/sql} directories to find cohort
-definition files and creates a new CohortEntry for each file with:
+definition files and creates a new CohortDef for each file with:
 \itemize{
 \item label: The basename of the file without extension
 \item tags: Empty list
@@ -46,7 +46,7 @@ definition files and creates a new CohortEntry for each file with:
 
 \strong{Metadata Enrichment (optional):}
 If a \code{cohortsLoad.csv} file exists in \code{cohortsFolderPath}, the function will
-automatically enrich CohortEntry objects with tags by matching the \code{file_name}
+automatically enrich CohortDef objects with tags by matching the \code{file_name}
 column from the load file with the \code{filePath} of each entry. For matching entries,
 tags are added from the following columns:
 \itemize{

@@ -121,7 +121,7 @@ UlyssesStudy <- R6::R6Class(
       usethis::use_git_ignore(
         c(".Rproj.user", ".Ruserdata",
           ".Rhistory", ".RData",
-          ".Renviron", "exec/results")
+          ".Renviron", "exec/results", "errorReportSql.txt")
       )
       invisible(projFile)
 

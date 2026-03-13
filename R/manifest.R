@@ -22,14 +22,14 @@
 #'
 #' **If database doesn't exist:**
 #' Scans `cohortsFolderPath/json` and `cohortsFolderPath/sql` directories to find cohort
-#' definition files and creates a new CohortEntry for each file with:
+#' definition files and creates a new CohortDef for each file with:
 #' - label: The basename of the file without extension
 #' - tags: Empty list
 #' - filePath: The full path to the cohort file
 #'
 #' **Metadata Enrichment (optional):**
 #' If a `cohortsLoad.csv` file exists in `cohortsFolderPath`, the function will
-#' automatically enrich CohortEntry objects with tags by matching the `file_name`
+#' automatically enrich CohortDef objects with tags by matching the `file_name`
 #' column from the load file with the `filePath` of each entry. For matching entries,
 #' tags are added from the following columns:
 #' - `atlasId`: Added as an "atlasId" tag
@@ -85,8 +85,8 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
         }
 
         tryCatch({
-          # Create CohortEntry from file (this computes current hash)
-          cohort_entry <- CohortEntry$new(
+          # Create CohortDef from file (this computes current hash)
+          cohort_entry <- CohortDef$new(
             label = record$label,
             tags = list(),
             filePath = file_path
@@ -133,7 +133,7 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
       for (file_path in json_files) {
         label <- tools::file_path_sans_ext(basename(file_path))
         tryCatch({
-          cohort_entry <- CohortEntry$new(
+          cohort_entry <- CohortDef$new(
             label = label,
             tags = list(),
             filePath = file_path
@@ -153,7 +153,7 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
       for (file_path in sql_files) {
         label <- tools::file_path_sans_ext(basename(file_path))
         tryCatch({
-          cohort_entry <- CohortEntry$new(
+          cohort_entry <- CohortDef$new(
             label = label,
             tags = list(),
             filePath = file_path
@@ -173,7 +173,7 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
     cli::cli_alert_success("Found {length(cohort_entries)} total cohorts")
   }
 
-  # Check for cohortsLoad.csv file to enrich entries with tags
+  # Check for cohortsLoad.csv file to enrich entries with tags and labels
   cohorts_load_path <- fs::path(cohortsFolderPath, "cohortsLoad.csv")
   if (file.exists(cohorts_load_path)) {
     cli::cli_alert_info("Found cohortsLoad.csv. Enriching entries with load metadata...")
@@ -181,13 +181,14 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
     tryCatch({
       cohorts_load <- readr::read_csv(cohorts_load_path, show_col_types = FALSE)
 
-      # Validate required columns
+      # Validate required columns (label is optional)
       required_cols <- c("file_name", "atlasId", "category", "subCategory")
       missing_cols <- setdiff(required_cols, names(cohorts_load))
 
       if (length(missing_cols) == 0) {
         # Process each cohort entry to find matching load record
         tags_added <- 0
+        labels_updated <- 0
         for (i in seq_along(cohort_entries)) {
           entry <- cohort_entries[[i]]
           entry_filepath_rel <- fs::path_rel(entry$getFilePath())
@@ -197,6 +198,12 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
 
           if (length(matching_idx) > 0) {
             load_record <- cohorts_load[matching_idx[1], ]
+
+            # Update label if provided in cohortsLoad.csv
+            if ("label" %in% names(cohorts_load) && !is.na(load_record$label)) {
+              entry$label <- as.character(load_record$label)
+              labels_updated <- labels_updated + 1
+            }
 
             # Add tags from load record
             entry_tags <- list()
@@ -213,12 +220,12 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
             if (length(entry_tags) > 0) {
               entry$tags <- entry_tags
               tags_added <- tags_added + 1
-              cli::cli_alert_success("Added tags to cohort: {entry$label}")
+              cli::cli_alert_success("Added metadata to cohort: {entry$label}")
             }
           }
         }
 
-        cli::cli_alert_success("Added metadata tags to {tags_added} cohort entries from cohortsLoad.csv")
+        cli::cli_alert_success("Updated {labels_updated} labels and added tags to {tags_added} cohort entries from cohortsLoad.csv")
       } else {
         cli::cli_alert_warning("cohortsLoad.csv is missing required columns: {paste(missing_cols, collapse = ', ')}")
       }

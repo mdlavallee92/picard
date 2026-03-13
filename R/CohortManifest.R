@@ -1,17 +1,17 @@
-#' CohortEntry R6 Class
+#' CohortDef R6 Class
 #'
 #' An R6 class that stores key information about CIRCE cohorts that need to be
 #' generated for a study.
 #'
 #' @details
-#' The CohortEntry class manages cohort metadata and SQL generation.
+#' The CohortDef class manages cohort metadata and SQL generation.
 #' Upon initialization, it loads and validates cohort definitions from either
 #' JSON (CIRCE format) or SQL files, and creates a hash to uniquely identify
 #' the generated SQL.
 #'
 #' @export
-CohortEntry <- R6::R6Class(
-  classname = "CohortEntry",
+CohortDef <- R6::R6Class(
+  classname = "CohortDef",
   private = list(
     .label = NULL,
     .tags = NULL,
@@ -54,7 +54,7 @@ CohortEntry <- R6::R6Class(
   ),
 
   public = list(
-    #' @description Initialize a new CohortEntry
+    #' @description Initialize a new CohortDef
     #'
     #' @param label Character. The common name of the cohort.
     #' @param tags List. A named list of tags that give metadata about the cohort.
@@ -156,13 +156,13 @@ CohortEntry <- R6::R6Class(
 
 #' CohortManifest R6 Class
 #'
-#' An R6 class that manages a collection of CohortEntry objects and maintains
+#' An R6 class that manages a collection of CohortDef objects and maintains
 #' metadata in a SQLite database.
 #'
 #' @details
-#' The CohortManifest class manages multiple cohort entries and stores their
+#' The CohortManifest class manages multiple cohort definitions and stores their
 #' metadata in a SQLite database located at inputs/cohorts/cohortManifest.sqlite.
-#' Each CohortEntry is assigned a sequential ID based on its position in the manifest.
+#' Each CohortDef is assigned a sequential ID based on its position in the manifest.
 #'
 #' @export
 CohortManifest <- R6::R6Class(
@@ -318,7 +318,7 @@ CohortManifest <- R6::R6Class(
   public = list(
     #' @description Initialize a new CohortManifest
     #'
-    #' @param cohortEntries List. A list of CohortEntry objects.
+    #' @param cohortEntries List. A list of CohortDef objects.
     #' @param executionSettings Object. Execution settings for DBMS cohort generation.
     #'   Can be any object type containing configuration for how cohorts should be executed
     #'   on the target database.
@@ -328,13 +328,13 @@ CohortManifest <- R6::R6Class(
       # Validate input is a list
       checkmate::assert_list(x = cohortEntries, min.len = 1)
 
-      # Validate all elements are CohortEntry objects
+      # Validate all elements are CohortDef objects
       valid_entries <- all(sapply(cohortEntries, function(x) {
-        inherits(x, "CohortEntry")
+        inherits(x, "CohortDef")
       }))
 
       if (!valid_entries) {
-        stop("All elements in cohortEntries must be CohortEntry objects")
+        stop("All elements in cohortEntries must be CohortDef objects")
       }
 
       # Assign IDs to each cohort entry
@@ -597,7 +597,7 @@ CohortManifest <- R6::R6Class(
     #'
     #' @param id Integer. The cohort ID.
     #'
-    #' @return CohortEntry. The CohortEntry object with matching ID, or NULL if not found.
+    #' @return CohortDef. The CohortDef object with matching ID, or NULL if not found.
     grabCohortById = function(id) {
       checkmate::assert_int(x = id)
 
@@ -615,7 +615,7 @@ CohortManifest <- R6::R6Class(
     #'
     #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
     #'
-    #' @return List. A list of CohortEntry objects with matching tags, or NULL if none found.
+    #' @return List. A list of CohortDef objects with matching tags, or NULL if none found.
     grabCohortsByTag = function(tagString) {
       checkmate::assert_string(x = tagString, min.chars = 1)
 
@@ -654,7 +654,7 @@ CohortManifest <- R6::R6Class(
     #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
     #'   Defaults to "exact".
     #'
-    #' @return List. A list of CohortEntry objects with matching labels, or NULL if none found.
+    #' @return List. A list of CohortDef objects with matching labels, or NULL if none found.
     grabCohortsByLabel = function(label, matchType = c("exact", "pattern")) {
       checkmate::assert_string(x = label, min.chars = 1)
       matchType <- match.arg(matchType)
@@ -794,6 +794,128 @@ CohortManifest <- R6::R6Class(
       invisible(NULL)
     },
 
+    #' Drop cohort tables from the database
+    #'
+    #' @description
+    #' Drops cohort tables from the target database. Can drop all standard cohort tables or specific tables.
+    #' This is useful for cleaning up or resetting the cohort generation environment.
+    #'
+    #' @details
+    #' Requires that executionSettings has been set and includes:
+    #' - A database connection (via getConnection())
+    #' - workDatabaseSchema for the target schema
+    #' - cohortTable with the desired table name
+    #'
+    #' @param tableTypes Character vector. Types of tables to drop. Options: "cohort", "inclusion", 
+    #'   "inclusion_result", "inclusion_stats", "summary_stats", "censor_stats", "checksum".
+    #'   If NULL (default), drops all table types.
+    #'
+    #' @return Invisible NULL. Drops tables from the database and prints status messages.
+    dropCohortTables = function(tableTypes = NULL) {
+      # Validate execution settings
+      settings <- private$.executionSettings
+      if (is.null(settings)) {
+        stop("Execution settings must be set before dropping cohort tables")
+      }
+
+      # Get execution parameters
+      conn <- settings$getConnection()
+      if (is.null(conn)) {
+        settings$connect()
+        conn <- settings$getConnection()
+      }
+      on.exit(settings$disconnect())
+
+      schema <- settings$workDatabaseSchema
+      if (is.null(schema) || is.na(schema)) {
+        stop("workDatabaseSchema must be set in execution settings")
+      }
+
+      cohort_table <- settings$cohortTable
+      if (is.null(cohort_table) || is.na(cohort_table)) {
+        stop("cohortTable must be set in execution settings")
+      }
+
+      dbms <- settings$getDbms()
+
+      # Get cohort table names
+      table_names <- getCohortTableNames(
+        cohortTable = cohort_table,
+        cohortSampleTable = cohort_table,
+        cohortInclusionTable = paste0(cohort_table, "_inclusion"),
+        cohortInclusionResultTable = paste0(cohort_table, "_inclusion_result"),
+        cohortInclusionStatsTable = paste0(cohort_table, "_inclusion_stats"),
+        cohortSummaryStatsTable = paste0(cohort_table, "_summary_stats"),
+        cohortCensorStatsTable = paste0(cohort_table, "_censor_stats")
+      )
+
+      # Define all available tables
+      all_tables <- list(
+        cohort = list(name = cohort_table, type = "cohort"),
+        inclusion = list(name = table_names$cohortInclusionTable, type = "inclusion"),
+        inclusion_result = list(name = table_names$cohortInclusionResultTable, type = "inclusion_result"),
+        inclusion_stats = list(name = table_names$cohortInclusionStatsTable, type = "inclusion_stats"),
+        summary_stats = list(name = table_names$cohortSummaryStatsTable, type = "summary_stats"),
+        censor_stats = list(name = table_names$cohortCensorStatsTable, type = "censor_stats"),
+        checksum = list(name = table_names$cohortChecksumTable, type = "checksum")
+      )
+
+      # Filter tables to drop
+      if (is.null(tableTypes)) {
+        # Drop all tables
+        tables_to_drop <- all_tables
+      } else {
+        # Validate and filter requested table types
+        valid_types <- c("cohort", "inclusion", "inclusion_result", "inclusion_stats", "summary_stats", "censor_stats", "checksum")
+        invalid_types <- setdiff(tableTypes, valid_types)
+
+        if (length(invalid_types) > 0) {
+          stop("Invalid table types: ", paste(invalid_types, collapse = ", "),
+               "\nValid options: ", paste(valid_types, collapse = ", "))
+        }
+
+        tables_to_drop <- all_tables[tableTypes]
+      }
+
+      cli::cli_rule("Dropping Cohort Tables")
+      cli::cli_alert_info("Database: {settings$databaseName}")
+      cli::cli_alert_info("Schema: {schema}")
+
+      dropped_count <- 0
+      not_found_count <- 0
+
+      # Drop each table
+      for (table_info in tables_to_drop) {
+        table_name <- table_info$name
+        table_type <- table_info$type
+
+        # Check if table exists
+        if (tableExists(conn, schema, table_name, dbms)) {
+          # Build DROP TABLE statement
+          sql <- paste0("DROP TABLE ", schema, ".", table_name)
+
+          tryCatch({
+            DatabaseConnector::executeSql(conn, sql, progressBar = FALSE, reportOverallTime = FALSE)
+            cli::cli_alert_success("Dropped {table_type} table: {table_name}")
+            dropped_count <- dropped_count + 1
+          }, error = function(e) {
+            cli::cli_alert_danger("Failed to drop {table_type} table {table_name}: {e$message}")
+          })
+        } else {
+          cli::cli_alert_warning("{table_type} table does not exist: {table_name}")
+          not_found_count <- not_found_count + 1
+        }
+      }
+
+      cli::cli_rule()
+      cli::cli_alert_success("Dropped {dropped_count} table(s)")
+      if (not_found_count > 0) {
+        cli::cli_alert_info("{not_found_count} table(s) did not exist")
+      }
+
+      invisible(NULL)
+    },
+
     #' Generate cohorts in the database
     #'
     #' @description
@@ -810,8 +932,7 @@ CohortManifest <- R6::R6Class(
     #' - cohortTable (destination table name)
     #' - tempEmulationSchema if needed for the database platform
     #'
-    #' @return Data frame with execution results including cohort_id, label, execution_time_ms, and status
-    #' @noRd
+    #' @return Data frame with execution results including cohort_id, label, execution_time_min, and status
     generateCohorts = function() {
       # Validate execution settings
       settings <- private$.executionSettings
@@ -861,7 +982,7 @@ CohortManifest <- R6::R6Class(
       results_df <- data.frame(
         cohort_id = integer(),
         label = character(),
-        execution_time_ms = numeric(),
+        execution_time_min = numeric(),
         status = character(),
         stringsAsFactors = FALSE
       )
@@ -905,7 +1026,7 @@ CohortManifest <- R6::R6Class(
           results_df <- rbind(results_df, data.frame(
             cohort_id = cohort_id,
             label = cohort_label,
-            execution_time_ms = 0,
+            execution_time_min = 0,
             status = "Skipped - already generated",
             stringsAsFactors = FALSE
           ))
@@ -915,7 +1036,7 @@ CohortManifest <- R6::R6Class(
         # Generate the cohort
         cli::cli_alert_info("Generating cohort {cohort_id}: {cohort_label}...")
 
-        # Get the SQL from the cohortEntry class
+        # Get the SQL from the cohortDef class
         cohort_sql <- cohort$getSql()
 
         # Render the SQL with required parameters
@@ -955,7 +1076,7 @@ CohortManifest <- R6::R6Class(
         # Check if execution failed
         if (inherits(result, "try-error")) {
           end_time <- Sys.time()
-          execution_time_ms <- as.numeric(difftime(end_time, start_time, units = "secs")) * 1000
+          execution_time_min <- as.numeric(difftime(end_time, start_time, units = "mins"))
           error_msg <- as.character(result)
 
           cli::cli_alert_danger("Failed to generate cohort {cohort_id}: {cohort_label}")
@@ -965,7 +1086,7 @@ CohortManifest <- R6::R6Class(
           results_df <- rbind(results_df, data.frame(
             cohort_id = cohort_id,
             label = cohort_label,
-            execution_time_ms = execution_time_ms,
+            execution_time_min = execution_time_min,
             status = paste("Error:", error_msg),
             stringsAsFactors = FALSE
           ))
@@ -977,7 +1098,7 @@ CohortManifest <- R6::R6Class(
               results_df <- rbind(results_df, data.frame(
                 cohort_id = remaining_cohort$getId(),
                 label = remaining_cohort$label,
-                execution_time_ms = NA_real_,
+                execution_time_min = NA_real_,
                 status = "Not generated",
                 stringsAsFactors = FALSE
               ))
@@ -990,7 +1111,7 @@ CohortManifest <- R6::R6Class(
 
         # Success path
         end_time <- Sys.time()
-        execution_time_ms <- as.numeric(difftime(end_time, start_time, units = "secs")) * 1000
+        execution_time_min <- as.numeric(difftime(end_time, start_time, units = "mins"))
 
         # Update or insert checksum
         if (is.null(stored_hash)) {
@@ -1019,28 +1140,134 @@ CohortManifest <- R6::R6Class(
           reportOverallTime = FALSE
         ), silent = TRUE)
 
-        cli::cli_alert_success("Generated cohort {cohort_id}: {cohort_label} ({execution_time_ms |> round(2)}ms)")
+        cli::cli_alert_success("Generated cohort {cohort_id}: {cohort_label} ({execution_time_min |> round(2)} min)")
 
         results_df <- rbind(results_df, data.frame(
           cohort_id = cohort_id,
           label = cohort_label,
-          execution_time_ms = execution_time_ms,
+          execution_time_min = execution_time_min,
           status = "Success",
           stringsAsFactors = FALSE
         ))
       }
 
       cli::cli_rule()
-      total_time_ms <- sum(results_df$execution_time_ms[results_df$status == "Success"], na.rm = TRUE)
+      total_time_min <- sum(results_df$execution_time_min[results_df$status == "Success"], na.rm = TRUE)
       successful <- sum(results_df$status == "Success")
       skipped <- sum(results_df$status == "Skipped - already generated")
       failed <- sum(grepl("Error:", results_df$status))
 
       cli::cli_alert_success("Cohort generation complete")
       cli::cli_alert_info("Total cohorts: {nrow(results_df)} | Successful: {successful} | Skipped: {skipped} | Failed: {failed}")
-      cli::cli_alert_info("Total execution time: {total_time_ms |> round(2)}ms ({(total_time_ms/1000) |> round(2)}s)")
+      cli::cli_alert_info("Total execution time: {total_time_min |> round(2)} min")
 
       return(results_df)
+    },
+
+    #' @description Retrieve cohort counts from the database
+    #'
+    #' Retrieves entry and subject counts for cohorts from the cohort table in the target database.
+    #' Can retrieve counts for all cohorts or a specific subset. Enriches the results with metadata
+    #' (label and tags) from the CohortDef objects in the manifest.
+    #'
+    #' @param cohortIds Integer vector. Optional. Specific cohort IDs to retrieve counts for.
+    #'   If NULL (default), returns counts for all cohorts.
+    #'
+    #' @return Data frame with columns:
+    #'   - cohort_id: The cohort definition ID
+    #'   - label: The cohort label from the CohortDef object
+    #'   - tags: The cohort tags formatted as a string
+    #'   - cohort_entries: Total number of cohort records
+    #'   - cohort_subjects: Number of distinct subjects in the cohort
+    #'
+    retrieveCohortCounts = function(cohortIds = NULL) {
+      # Validate execution settings
+      settings <- private$.executionSettings
+      if (is.null(settings)) {
+        stop("Execution settings must be set before retrieving cohort counts")
+      }
+
+      # Get connection
+      conn <- settings$getConnection()
+      if (is.null(conn)) {
+        settings$connect()
+        conn <- settings$getConnection()
+      }
+      on.exit(settings$disconnect())
+
+      # Get execution parameters
+      cohort_schema <- settings$workDatabaseSchema
+      if (is.null(cohort_schema) || is.na(cohort_schema)) {
+        stop("workDatabaseSchema must be set in execution settings")
+      }
+
+      cohort_table <- settings$cohortTable
+      if (is.null(cohort_table) || is.na(cohort_table)) {
+        stop("cohortTable must be set in execution settings")
+      }
+
+      dbms <- settings$getDbms()
+
+      # Build SQL query
+      # When cohortIds is NULL, retrieve counts for ALL cohort IDs in the table
+      where_clause <- ""
+      if (!is.null(cohortIds)) {
+        checkmate::assert_integerish(cohortIds)
+        cohort_ids_str <- paste0(cohortIds, collapse = ", ")
+        where_clause <- paste0("\n        WHERE cohort_definition_id IN (", cohort_ids_str, ")")
+      } else {
+        # Explicitly retrieve all cohort IDs from the table
+        cli::cli_alert_info("Retrieving counts for all cohorts in {cohort_table}")
+      }
+
+      sql <- paste0(
+        "SELECT
+          cohort_definition_id AS cohort_id,
+          COUNT(*) AS cohort_entries,
+          COUNT(DISTINCT subject_id) AS cohort_subjects
+        FROM ", cohort_schema, ".", cohort_table, where_clause, "
+        GROUP BY cohort_definition_id
+        ORDER BY cohort_definition_id"
+      )
+
+      # Execute query
+      tryCatch({
+        results <- DatabaseConnector::querySql(conn, sql)
+        
+        # Convert column names to lowercase for consistency
+        colnames(results) <- tolower(colnames(results))
+        
+        # Ensure proper data types
+        results$cohort_id <- as.integer(results$cohort_id)
+        results$cohort_entries <- as.integer(results$cohort_entries)
+        results$cohort_subjects <- as.integer(results$cohort_subjects)
+        
+        # Initialize columns for metadata
+        results$label <- character(nrow(results))
+        results$tags <- character(nrow(results))
+        
+        # Join metadata from CohortDef objects
+        for (i in seq_len(nrow(results))) {
+          cohort_id <- results$cohort_id[i]
+          
+          # Find matching CohortDef in manifest
+          for (cohort in private$.manifest) {
+            if (cohort$getId() == cohort_id) {
+              results$label[i] <- cohort$label
+              results$tags[i] <- cohort$formatTagsAsString()
+              break
+            }
+          }
+        }
+        
+        # Reorder columns: cohort_id, label, tags, cohort_entries, cohort_subjects
+        results <- results[, c("cohort_id", "label", "tags", "cohort_entries", "cohort_subjects")]
+        
+        return(results)
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to retrieve cohort counts: {e$message}")
+        return(NULL)
+      })
     }
   )
 )
@@ -1115,9 +1342,10 @@ createMainCohortTableSql <- function(schema, tableName, dbms, tempEmulationSchem
 #'
 createInclusionTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT,
-    inclusion_sequence INT,
-    inclusion_name VARCHAR(255)
+    cohort_definition_id BIGINT NOT NULL,
+  	rule_sequence INT NOT NULL,
+  	name VARCHAR(255) NULL,
+  	description VARCHAR(1000) NULL
   );"
 
   sql <- SqlRender::render(
@@ -1146,10 +1374,10 @@ createInclusionTableSql <- function(schema, tableName, dbms) {
 #'
 createInclusionResultTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT,
-    inclusion_sequence INT,
-    subject_id INT,
-    inclusion_rule_was_met INT
+    cohort_definition_id BIGINT NOT NULL,
+  	inclusion_rule_mask BIGINT NOT NULL,
+  	person_count BIGINT NOT NULL,
+  	mode_id INT
   );"
 
   sql <- SqlRender::render(
@@ -1178,12 +1406,12 @@ createInclusionResultTableSql <- function(schema, tableName, dbms) {
 #'
 createInclusionStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT,
-    rule_sequence INT,
-    name VARCHAR(255),
-    person_count INT,
-    gain_count INT,
-    person_total INT
+    cohort_definition_id BIGINT NOT NULL,
+  	rule_sequence INT NOT NULL,
+  	person_count BIGINT NOT NULL,
+  	gain_count BIGINT NOT NULL,
+  	person_total BIGINT NOT NULL,
+  	mode_id INT
   );"
 
   sql <- SqlRender::render(
@@ -1212,10 +1440,10 @@ createInclusionStatsTableSql <- function(schema, tableName, dbms) {
 #'
 createSummaryStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT,
-    base_count INT,
-    final_count INT,
-    rule_count INT
+    cohort_definition_id BIGINT NOT NULL,
+  	base_count BIGINT NOT NULL,
+  	final_count BIGINT NOT NULL,
+  	mode_id INT
   );"
 
   sql <- SqlRender::render(
@@ -1244,10 +1472,8 @@ createSummaryStatsTableSql <- function(schema, tableName, dbms) {
 #'
 createCensorStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT,
-    loss_event_id INT,
-    loss_date DATE,
-    person_count INT
+    cohort_definition_id BIGINT NOT NULL,
+    lost_count BIGINT NOT NULL
   );"
 
   sql <- SqlRender::render(
@@ -1276,9 +1502,10 @@ createCensorStatsTableSql <- function(schema, tableName, dbms) {
 #'
 createChecksumTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
-    cohort_definition_id INT PRIMARY KEY,
-    checksum VARCHAR(128),
-    generated_at DATETIME
+    cohort_definition_id BIGINT NOT NULL,
+    checksum varchar(500) NOT NULL,
+    start_time FLOAT,
+    end_time FLOAT
   );"
 
   sql <- SqlRender::render(
