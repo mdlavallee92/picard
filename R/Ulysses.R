@@ -805,3 +805,117 @@ writeFileAndNotify <- function(x, repoPath, fileName) {
   actionItem(glue::glue_col("Write {green {fileName}} to: {cyan {filePath}}"))
   invisible(filePath)
 }
+
+#' Validate Ulysses Repository Structure
+#'
+#' @description Checks that a directory is a valid Ulysses-style repository
+#' with all required files and folders.
+#'
+#' @param path Character. Path to the repository to validate. If NULL (default),
+#'   uses the current working directory.
+#'
+#' @return List with validation results containing:
+#'   - is_valid: Logical. TRUE if all requirements met
+#'   - path: Character. Path that was validated
+#'   - required_files: Data frame with required files and their status
+#'   - required_dirs: Data frame with required directories and their status
+#'   - summary: Character. Summary message
+#'
+#' @details
+#' A valid Ulysses repository must contain:
+#' - README.md file
+#' - NEWS.md file
+#' - config.yml file
+#' - *.Rproj file (R project file)
+#' - analysis/ directory
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#'   validateUlyssesStructure()  # Check current directory
+#'   validateUlyssesStructure("/path/to/repo")  # Check specific directory
+#' }
+validateUlyssesStructure <- function(path = NULL) {
+  # Use current working directory if path not provided
+  if (is.null(path)) {
+    path <- here::here()
+  }
+  
+  checkmate::assert_string(x = path, min.chars = 1)
+  path <- fs::path_expand(path)
+  
+  # Check if path exists
+  if (!fs::dir_exists(path)) {
+    cli::cli_alert_danger("Path does not exist: {path}")
+    return(list(
+      is_valid = FALSE,
+      path = path,
+      summary = glue::glue("Path does not exist: {path}")
+    ))
+  }
+  
+  # Required files
+  required_files <- list(
+    README = fs::path(path, "README.md"),
+    NEWS = fs::path(path, "NEWS.md"),
+    CONFIG = fs::path(path, "config.yml")
+  )
+  
+  # Check for .Rproj file (any .Rproj file in the directory)
+  rproj_files <- fs::dir_ls(path, glob = "*.Rproj", recurse = FALSE)
+  required_files$RPROJ <- if (length(rproj_files) > 0) rproj_files[1] else NA_character_
+  
+  # Check which files exist
+  files_status <- data.frame(
+    file = names(required_files),
+    path = unlist(required_files),
+    exists = sapply(unlist(required_files), function(p) {
+      if (is.na(p)) FALSE else fs::file_exists(p)
+    }),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  
+  # Required directories
+  required_dirs_list <- list(
+    analysis = fs::path(path, "analysis")
+  )
+  
+  dirs_status <- data.frame(
+    directory = names(required_dirs_list),
+    path = unlist(required_dirs_list),
+    exists = sapply(unlist(required_dirs_list), fs::dir_exists),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  
+  # Determine overall validity
+  files_valid <- all(files_status$exists)
+  dirs_valid <- all(dirs_status$exists)
+  is_valid <- files_valid && dirs_valid
+  
+  # Build summary message
+  if (is_valid) {
+    summary <- glue::glue("Valid Ulysses repository at {path}")
+    cli::cli_alert_success(summary)
+  } else {
+    missing_files <- files_status$file[!files_status$exists]
+    missing_dirs <- dirs_status$directory[!dirs_status$exists]
+    
+    missing_items <- c(
+      if (length(missing_files) > 0) glue::glue("Missing files: {paste(missing_files, collapse = ', ')}"),
+      if (length(missing_dirs) > 0) glue::glue("Missing directories: {paste(missing_dirs, collapse = ', ')}")
+    )
+    summary <- glue::glue("Invalid Ulysses repository at {path}. {paste(missing_items, collapse = '. ')}")
+    cli::cli_alert_danger(summary)
+  }
+  
+  # Return results
+  list(
+    is_valid = is_valid,
+    path = path,
+    required_files = files_status,
+    required_dirs = dirs_status,
+    summary = summary
+  )
+}
