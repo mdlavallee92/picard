@@ -1116,29 +1116,44 @@ CohortManifest <- R6::R6Class(
         # Update or insert checksum
         if (is.null(stored_hash)) {
           # Insert new checksum record
-          insert_sql <- paste0(
-            "INSERT INTO ", cohort_schema, ".", checksum_table,
-            " (cohort_definition_id, checksum, generated_at) VALUES (",
-            cohort_id, ", '", current_hash, "', ", 
-            "CAST('", format(Sys.time(), '%Y-%m-%d %H:%M:%S'), "' AS DATETIME))"
+          checksum_data <- data.frame(
+            cohort_definition_id = cohort_id,
+            checksum = current_hash,
+            start_time = NA_real_,
+            end_time = as.numeric(difftime(Sys.time(), start_time, units = "secs")),
+            stringsAsFactors = FALSE
           )
+          
+          try({
+            DatabaseConnector::insertTable(
+              connection = conn,
+              tableName = paste(cohort_schema, checksum_table, sep = "."),
+              data = checksum_data,
+              dropTableIfExists = FALSE,
+              createTable = FALSE,
+              tempTable = FALSE
+            )
+            cli::cli_alert_info("Recorded checksum for cohort {cohort_id}")
+          }, silent = FALSE)
         } else {
           # Update existing checksum record
-          insert_sql <- paste0(
+          update_sql <- paste0(
             "UPDATE ", cohort_schema, ".", checksum_table,
             " SET checksum = '", current_hash, "', ",
-            "generated_at = CAST('", format(Sys.time(), '%Y-%m-%d %H:%M:%S'), "' AS DATETIME)",
-            " WHERE cohort_definition_id = ", cohort_id
+            "end_time = ", as.numeric(difftime(Sys.time(), start_time, units = "secs")), " ",
+            "WHERE cohort_definition_id = ", cohort_id
           )
+          
+          try({
+            DatabaseConnector::executeSql(
+              conn,
+              update_sql,
+              progressBar = FALSE,
+              reportOverallTime = FALSE
+            )
+            cli::cli_alert_info("Updated checksum for cohort {cohort_id}")
+          }, silent = FALSE)
         }
-
-        # Execute checksum update
-        try(DatabaseConnector::executeSql(
-          conn,
-          insert_sql,
-          progressBar = FALSE,
-          reportOverallTime = FALSE
-        ), silent = TRUE)
 
         cli::cli_alert_success("Generated cohort {cohort_id}: {cohort_label} ({execution_time_min |> round(2)} min)")
 

@@ -15,6 +15,60 @@ metadata in a SQLite database.
 The ConceptSetManifest class manages multiple concept set definitions and stores their
 metadata in a SQLite database located at inputs/conceptSets/conceptSetManifest.sqlite.
 Each ConceptSetDef is assigned a sequential ID based on its position in the manifest.
+
+\strong{Vocabulary Suggestion by Domain:}
+The function automatically suggests appropriate vocabularies based on concept set domains:
+\itemize{
+\item \code{condition_occurrence}: ICD10CM, ICD9CM
+\item \code{procedure}: HCPCS, CPT4
+\item \code{measurement}: LOINC
+\item \code{drug_exposure}: NDC
+\item \code{observation}: All vocabularies (ICD9CM, ICD10CM, HCPCS, CPT4, LOINC, NDC)
+\item \code{device_exposure}: NDC
+}
+
+Note: These are suggestions only. You can override with any valid vocabulary combination.
+
+\strong{Workflow:}
+\enumerate{
+\item Detects domains of all concept sets in the manifest
+\item Displays suggested vocabularies based on detected domains
+\item Creates a single xlsx workbook
+\item For each concept set in the manifest:
+\itemize{
+\item Reads the CIRCE JSON definition
+\item Builds a concept query using CirceR
+\item Joins with concept_relationship via "Maps to" relationship
+\item Finds matching source codes in the specified vocabularies
+\item Adds results to a new sheet in the xlsx workbook
+}
+\item Exports all results to \verb{\{outputFolder\}/SourceCodeMap_\{vocabs\}.xlsx}
+\item Each sheet contains: vocabulary_id, concept_code, concept_name
+}
+
+\strong{Requirements:}
+\itemize{
+\item ExecutionSettings must be initialized with a valid connection
+\item Vocabulary schema must be accessible from ExecutionSettings
+\item openxlsx2 package must be installed
+}
+}
+\examples{
+
+## ------------------------------------------------
+## Method `ConceptSetManifest$extractSourceCodes`
+## ------------------------------------------------
+
+\dontrun{
+  # Get source codes for all concept sets in single xlsx with multiple sheets
+  settings <- createExecutionSettings(...)
+  manifest <- loadConceptSetManifest(settings)
+  manifest$extractSourceCodes(
+    sourceVocabs = c("ICD10CM", "ICD9CM")
+  )
+  # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
+}
+
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -30,6 +84,7 @@ Each ConceptSetDef is assigned a sequential ID based on its position in the mani
 \item \href{#method-ConceptSetManifest-grabConceptSetById}{\code{ConceptSetManifest$grabConceptSetById()}}
 \item \href{#method-ConceptSetManifest-grabConceptSetsByTag}{\code{ConceptSetManifest$grabConceptSetsByTag()}}
 \item \href{#method-ConceptSetManifest-grabConceptSetsByLabel}{\code{ConceptSetManifest$grabConceptSetsByLabel()}}
+\item \href{#method-ConceptSetManifest-extractSourceCodes}{\code{ConceptSetManifest$extractSourceCodes()}}
 \item \href{#method-ConceptSetManifest-clone}{\code{ConceptSetManifest$clone()}}
 }
 }
@@ -242,7 +297,56 @@ Defaults to "exact".}
 }
 \subsection{Returns}{
 List. A list of ConceptSetDef objects with matching labels, or NULL if none found.
+Extract Source Codes for Concept Sets
+
+Finds source codes that map to each concept set's standard concepts
+based on a defined source vocabulary. Results are exported to a single
+xlsx file with one sheet per concept set, saved in the inputs/conceptSets folder.
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-extractSourceCodes"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-extractSourceCodes}{}}}
+\subsection{Method \code{extractSourceCodes()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$extractSourceCodes(
+  sourceVocabs = c("ICD10CM"),
+  outputFolder = here::here("inputs/conceptSets")
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{sourceVocabs}}{Character vector. Source vocabulary IDs to search for.
+Valid options: "ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC".
+Defaults to c("ICD10CM").}
+
+\item{\code{outputFolder}}{Character. Path where the xlsx file will be saved.
+Defaults to "inputs/conceptSets".}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns NULL. Saves xlsx file to outputFolder and prints status messages.
+}
+\subsection{Examples}{
+\if{html}{\out{<div class="r example copy">}}
+\preformatted{\dontrun{
+  # Get source codes for all concept sets in single xlsx with multiple sheets
+  settings <- createExecutionSettings(...)
+  manifest <- loadConceptSetManifest(settings)
+  manifest$extractSourceCodes(
+    sourceVocabs = c("ICD10CM", "ICD9CM")
+  )
+  # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
+}
+
+}
+\if{html}{\out{</div>}}
+
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ConceptSetManifest-clone"></a>}}

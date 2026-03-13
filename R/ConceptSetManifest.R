@@ -315,6 +315,26 @@ ConceptSetManifest <- R6::R6Class(
         cli::cli_rule("Concept Set Manifest Update Summary")
         cli::cli_alert_success("Updated: {updated_count} | New: {new_count} | Unchanged: {unchanged_count}")
       }
+    },
+
+    # Suggest source vocabularies based on domain
+    suggest_source_vocabs_for_domain = function(domain) {
+      vocab_map <- list(
+        condition_occurrence = c("ICD10CM", "ICD9CM"),
+        procedure = c("HCPCS", "CPT4"),
+        measurement = c("LOINC"),
+        drug_exposure = c("NDC"),
+        observation = c("ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC"),
+        device_exposure = c("NDC"),
+        visit_occurrence = c("ICD10CM", "ICD9CM", "HCPCS", "CPT4"),
+        init = c("ICD10CM")
+      )
+      
+      if (domain %in% names(vocab_map)) {
+        return(vocab_map[[domain]])
+      } else {
+        return(NULL)
+      }
     }
   ),
 
@@ -678,6 +698,215 @@ ConceptSetManifest <- R6::R6Class(
       }
 
       return(matching_concept_sets)
+    },
+
+    #' Extract Source Codes for Concept Sets
+    #'
+    #' Finds source codes that map to each concept set's standard concepts
+    #' based on a defined source vocabulary. Results are exported to a single
+    #' xlsx file with one sheet per concept set, saved in the inputs/conceptSets folder.
+    #'
+    #' @param sourceVocabs Character vector. Source vocabulary IDs to search for.
+    #'   Valid options: "ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC".
+    #'   Defaults to c("ICD10CM").
+    #' @param outputFolder Character. Path where the xlsx file will be saved.
+    #'   Defaults to "inputs/conceptSets".
+    #'
+    #' @details
+    #' **Vocabulary Suggestion by Domain:**
+    #' The function automatically suggests appropriate vocabularies based on concept set domains:
+    #' - `condition_occurrence`: ICD10CM, ICD9CM
+    #' - `procedure`: HCPCS, CPT4
+    #' - `measurement`: LOINC
+    #' - `drug_exposure`: NDC
+    #' - `observation`: All vocabularies (ICD9CM, ICD10CM, HCPCS, CPT4, LOINC, NDC)
+    #' - `device_exposure`: NDC
+    #'
+    #' Note: These are suggestions only. You can override with any valid vocabulary combination.
+    #'
+    #' **Workflow:**
+    #' 1. Detects domains of all concept sets in the manifest
+    #' 2. Displays suggested vocabularies based on detected domains
+    #' 3. Creates a single xlsx workbook
+    #' 4. For each concept set in the manifest:
+    #'    - Reads the CIRCE JSON definition
+    #'    - Builds a concept query using CirceR
+    #'    - Joins with concept_relationship via "Maps to" relationship
+    #'    - Finds matching source codes in the specified vocabularies
+    #'    - Adds results to a new sheet in the xlsx workbook
+    #' 5. Exports all results to `{outputFolder}/SourceCodeMap_{vocabs}.xlsx`
+    #' 6. Each sheet contains: vocabulary_id, concept_code, concept_name
+    #'
+    #' **Requirements:**
+    #' - ExecutionSettings must be initialized with a valid connection
+    #' - Vocabulary schema must be accessible from ExecutionSettings
+    #' - openxlsx2 package must be installed
+    #'
+    #' @return Invisibly returns NULL. Saves xlsx file to outputFolder and prints status messages.
+    #'
+    #' @export
+    #'
+    #' @examples
+    #' \dontrun{
+    #'   # Get source codes for all concept sets in single xlsx with multiple sheets
+    #'   settings <- createExecutionSettings(...)
+    #'   manifest <- loadConceptSetManifest(settings)
+    #'   manifest$extractSourceCodes(
+    #'     sourceVocabs = c("ICD10CM", "ICD9CM")
+    #'   )
+    #'   # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
+    #' }
+    #'
+    extractSourceCodes = function(sourceVocabs = c("ICD10CM"),
+                                  outputFolder = here::here("inputs/conceptSets")) {
+      # Validate executionSettings is available
+      if (is.null(private$.executionSettings)) {
+        stop("ExecutionSettings is required to extract source codes. Initialize manifest with valid ExecutionSettings.")
+      }
+
+      # Define valid source vocabularies
+      valid_vocabs <- c("ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC")
+
+      # Validate sourceVocabs
+      checkmate::assert_character(sourceVocabs, min.len = 1)
+      invalid_vocabs <- setdiff(sourceVocabs, valid_vocabs)
+      if (length(invalid_vocabs) > 0) {
+        stop("Invalid source vocabulary: ", paste(invalid_vocabs, collapse = ", "),
+             ". Valid options: ", paste(valid_vocabs, collapse = ", "))
+      }
+
+      # Collect domains from all concept sets and suggest vocabularies
+      domains <- unique(sapply(private$.manifest, function(cs) {
+        tags <- cs$tags
+        if (!is.null(tags) && "domain" %in% names(tags)) {
+          return(tags[["domain"]])
+        }
+        return(NA_character_)
+      }))
+      
+      domains <- domains[!is.na(domains)]
+      
+      # Suggest vocabularies based on domains
+      if (length(domains) > 0) {
+        suggested_vocabs <- unique(unlist(lapply(domains, private$suggest_source_vocabs_for_domain)))
+        cli::cli_alert_info("Concept set domains detected: {paste(domains, collapse = ', ')}")
+        cli::cli_alert_info("Suggested source vocabularies for these domains: {paste(suggested_vocabs, collapse = ', ')}")
+        
+        # Interactive prompt to use suggested vocabularies
+        cli::cli_rule("Source Vocabulary Selection")
+        choice <- utils::menu(
+          c("Yes", "No"),
+          title = "Would you like to use the suggested source vocabularies?"
+        )
+        
+        if (choice == 1) {
+          # User selected "Yes"
+          sourceVocabs <- suggested_vocabs
+          cli::cli_alert_success("Using suggested vocabularies: {paste(sourceVocabs, collapse = ', ')}")
+        } else {
+          # User selected "No"
+          cli::cli_alert_info("Using specified vocabularies: {paste(sourceVocabs, collapse = ', ')}")
+        }
+      }
+
+      # Get connection and vocabulary schema from ExecutionSettings
+      exec_settings <- private$.executionSettings
+      connection <- exec_settings$getConnection()
+      vocab_schema <- exec_settings$cdmDatabaseSchema
+
+      if (is.null(connection)) {
+        exec_settings$connect()
+        connection <- exec_settings$getConnection()
+      }
+      on.exit(settings$disconnect())
+
+
+      if (is.null(vocab_schema)) {
+        stop("ExecutionSettings must have vocabularySchema defined")
+      }
+
+      # Check if openxlsx2 is available
+      if (!requireNamespace("openxlsx2", quietly = TRUE)) {
+        stop("The 'openxlsx2' package is required to extract source codes. Install it with: install.packages('openxlsx2')")
+      }
+
+      # Create output file path
+      output_file <- fs::path(outputFolder, paste0("SourceCodeWorkbook", ".xlsx"))
+
+      # Create workbook
+      wb <- openxlsx2::wb_workbook()
+
+      cli::cli_alert_info("Extracting source codes for {length(private$.manifest)} concept sets...")
+
+      # Process each concept set
+      for (i in seq_along(private$.manifest)) {
+        concept_set <- private$.manifest[[i]]
+
+        tryCatch({
+          cs_label <- concept_set$label
+          cs_json <- concept_set$getJson()
+          cs_file_path <- concept_set$getFilePath()
+
+          cli::cli_alert_info("[{i}/{length(private$.manifest)}] Processing: {crayon::magenta(cs_label)}")
+
+          # Build CIRCE concept set query
+          cs_sql <- CirceR::buildConceptSetQuery(cs_json)
+
+          # Wrap in CTE and join with source codes
+          full_sql <- glue::glue(
+            "WITH concepts AS ({cs_sql})\n",
+            "SELECT c.vocabulary_id, c.concept_code, c.concept_name\n",
+            "FROM concepts\n",
+            "JOIN @vocabulary_database_schema.concept_relationship cr\n",
+            "  ON cr.concept_id_2 = concepts.concept_id\n",
+            "  AND relationship_id = 'Maps to'\n",
+            "JOIN @vocabulary_database_schema.concept c\n",
+            "  ON c.concept_id = cr.concept_id_1\n",
+            "  AND c.vocabulary_id IN (@vocabs)\n",
+            "  AND c.invalid_reason IS NULL\n",
+            "ORDER BY 1, 2;"
+          )
+
+          # Format vocabulary list for SQL
+          vocabs_sql <- paste0("'", paste(sourceVocabs, collapse = "','"), "'")
+
+          # Execute query
+          source_codes <- DatabaseConnector::renderTranslateQuerySql(
+            connection,
+            full_sql,
+            vocabulary_database_schema = vocab_schema,
+            vocabs = vocabs_sql
+          )
+
+          # Create a valid sheet name (max 31 characters, no special chars)
+          sheet_name <- substr(gsub("[^a-zA-Z0-9]", "_", cs_label), 1, 31)
+
+          # Add worksheet to workbook and add data
+          wb <- openxlsx2::wb_add_worksheet(wb, sheet = sheet_name)
+          wb <- openxlsx2::wb_add_data(wb, sheet = sheet_name, x = source_codes)
+
+          # Format the header row
+          hs <- openxlsx2::create_style(fgFill = "#4472C4", fontColour = "white", textDecoration = "bold")
+          wb <- openxlsx2::wb_add_style(wb, sheet = sheet_name, style = hs, rows = 1, cols = 1:ncol(source_codes))
+
+          # Auto-fit columns
+          wb <- openxlsx2::set_col_widths(wb, sheet = sheet_name, widths = "auto", cols = 1:ncol(source_codes))
+
+          cli::cli_alert_success(
+            "Added {nrow(source_codes)} source codes for {crayon::cyan(cs_label)}"
+          )
+        }, error = function(e) {
+          cli::cli_alert_danger(
+            "Error extracting source codes for {concept_set$label}: {e$message}"
+          )
+        })
+      }
+
+      # Save the workbook
+      openxlsx2::wb_save(wb, file = output_file, overwrite = TRUE)
+      cli::cli_alert_success("Source codes extracted and saved to: {fs::path_rel(output_file)}")
+
+      invisible(NULL)
     }
   )
 )
