@@ -43,50 +43,47 @@ UlyssesStudy <- R6::R6Class(
       private[[".renvLock"]] <- renvLock
     },
 
-    initUlyssesRepo = function(verbose, openProject) {
-
-      if (verbose) {
-        notification("Step 1: Creating R Project")
-      }
-      # make a path to repo
-      toolType <- private$.toolType
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand() |>
-        fs::dir_create() # make repo if it doesnt exist
-
-      ## Make local project
-      usethis::local_project(repoPath, force = TRUE)
-      private$.initRProj()
-
-      # Step 2: add standard ulysses folders
-      if (verbose) {
-        notification("Step 2: Adding Standard Ulysses Folders")
-      }
-
-      folders <- listDefaultFolders(repoPath = repoPath)
-
-      # Step 3: make default files
-      if (verbose) {
-        notification("Step 3: Adding Standard Ulysses Files")
-      }
-
-      private$.initReadMe() #1 init read me
-      private$.initNews() # 2 init news
-      private$.initConfigFile() # 3 init config, if external make basic
-      private$.initQuarto() # 4 add the study hub stuff
-      private$.initMainExec() # 5 add the main.R file, if external make basic
-      private$.initAgent() # 6 add the agent skills template
-      #private$.initRenv() # 7 add the renv
-      private$.initGit() #initialize git locally this is the last step
-
-      if (openProject) {
-        notification("Opening project in new session")
-        rstudioapi::openProject(repoPath, newSession = TRUE)
-      }
-
+    initUlyssesRepo = function(verbose = TRUE, openProject = FALSE) {
+      repoPath <- private$.getRepoPath()
+      
+      if (verbose) cli::cli_h2("Initializing Ulysses Repository")
+      
+      tryCatch({
+        # Step 1: Create repo directory and R project
+        if (verbose) cli::cli_inform("Creating R project directory...")
+        fs::dir_create(repoPath, recurse = TRUE)
+        usethis::local_project(repoPath, force = TRUE)
+        private$.initRProj()
+        
+        # Step 2: Create folder structure
+        if (verbose) cli::cli_inform("Creating directory structure...")
+        listDefaultFolders(repoPath = repoPath)
+        
+        # Step 3: Initialize files
+        if (verbose) cli::cli_inform("Creating initialization files...")
+        private$.initReadMe()
+        private$.initNews()
+        private$.initConfigFile()
+        private$.initQuarto()
+        private$.initMainExec()
+        private$.initAgent()
+        
+        # Step 4: Initialize git
+        if (verbose) cli::cli_inform("Initializing git repository...")
+        private$.initGit()
+        
+        cli::cli_alert_success("Repository successfully initialized at {repoPath}")
+        
+        # Open project if requested
+        if (openProject) {
+          cli::cli_inform("Opening project in new session...")
+          rstudioapi::openProject(repoPath, newSession = TRUE)
+        }
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize repository: {e$message}")
+        stop(e)
+      })
+      
       invisible(repoPath)
     }
   ),
@@ -99,239 +96,193 @@ UlyssesStudy <- R6::R6Class(
     .gitRemote = NULL,
     .renvLock = NULL,
 
-    #functions to build Files
+    # Helper method to get expanded repository path
+    .getRepoPath = function() {
+      fs::path(private$.repoFolder, private$.repoName) |> fs::path_expand()
+    },
+
+    # File initialization methods
     .initRProj = function() {
-
+      repoPath <- private$.getRepoPath()
       repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand()
-
-      projLines <- fs::path_package("picard", "templates/rproj.txt") |>
-        readr::read_file()
-
-      projFile <- fs::path(repoPath, repoName, ext = "Rproj")
-      readr::write_file(
-        x = projLines,
-        file = fs::path(projFile)
-      )
-      actionItem(glue::glue_col("Initializing {green {repoName}.Rproj}"))
-      usethis::use_git_ignore(
-        c(".Rproj.user", ".Ruserdata",
-          ".Rhistory", ".RData",
-          ".Renviron", "exec/results", "errorReportSql.txt")
-      )
-      invisible(projFile)
-
+      
+      tryCatch({
+        projLines <- fs::path_package("picard", "templates/rproj.txt") |>
+          readr::read_file()
+        
+        projFile <- fs::path(repoPath, repoName, ext = "Rproj")
+        readr::write_file(x = projLines, file = projFile)
+        
+        cli::cli_alert_success("Created {.file {fs::path_rel(projFile)}}")
+        
+        usethis::use_git_ignore(
+          c(".Rproj.user", ".Ruserdata", ".Rhistory", ".RData",
+            ".Renviron", "exec/results", "errorReportSql.txt")
+        )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize R project: {e$message}")
+        stop(e)
+      })
+      
+      invisible(NULL)
     },
 
     .initReadMe = function() {
-
-      sm <- private$.studyMeta
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand()
-
-      initReadMeFn(sm = sm, repoName = repoName, repoPath = repoPath)
+      repoPath <- private$.getRepoPath()
+      tryCatch({
+        initReadMeFn(sm = private$.studyMeta, repoName = private$.repoName, repoPath = repoPath)
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize README: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initNews = function() {
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand()
-
-      initNewsFn(repoName = repoName, repoPath = repoPath)
+      repoPath <- private$.getRepoPath()
+      tryCatch({
+        initNewsFn(repoName = private$.repoName, repoPath = repoPath)
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize NEWS: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initConfigFile = function() {
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      toolType <- private$.toolType # get tool type to differ build
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand()
-
-      private$.execOptions$makeConfigFile(
-        repoName = repoName,
-        repoPath = repoPath,
-        toolType = toolType
-      )
-
-
+      repoPath <- private$.getRepoPath()
+      tryCatch({
+        private$.execOptions$makeConfigFile(
+          repoName = private$.repoName,
+          repoPath = repoPath,
+          toolType = private$.toolType
+        )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize config: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initGit = function() {
-
-      gitRemoteUrl <- private$.gitRemote
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      repoPath <- fs::path(repoFolder, repoName) |>
-        fs::path_expand()
-
-      #Step1: initialize git
-      gert::git_init(repoPath)
-
-      if (!is.null(gitRemoteUrl)) {
-
-        addGitRemoteToUlysses(
-          gitRemoteUrl = gitRemoteUrl,
-          gitRemoteName = "origin",
-          commitMessage = "Initialize Ulysses Repo for study"
-        )
-
-      } else {
-        # Step 2: add all files
-        stg <- gert::git_add(files = ".")
-        #step 3: commit all files
-        sha <- gert::git_commit_all(
-          message = "Initialize Ulysses Repo for study"
-        )
-      }
-
-      invisible(TRUE)
+      repoPath <- private$.getRepoPath()
+      tryCatch({
+        gert::git_init(repoPath)
+        
+        if (!is.null(private$.gitRemote)) {
+          addGitRemoteToUlysses(
+            gitRemoteUrl = private$.gitRemote,
+            gitRemoteName = "origin",
+            commitMessage = "Initialize Ulysses Repo for study"
+          )
+        } else {
+          gert::git_add(files = ".")
+          gert::git_commit_all(message = "Initialize Ulysses Repo for study")
+        }
+        cli::cli_alert_success("Git repository initialized")
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize git: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initQuarto = function() {
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      studyTitle <- self$studyMeta$studyTitle
-
-      initStudyHubFiles(
-        repoName = repoName,
-        repoFolder = repoFolder,
-        studyTitle = self$studyMeta$studyTitle
-      )
-
+      tryCatch({
+        initStudyHubFiles(
+          repoName = private$.repoName,
+          repoFolder = private$.repoFolder,
+          studyTitle = private$.studyMeta$studyTitle
+        )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize Quarto files: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initMainExec = function() {
-
-      repoName <- private$.repoName
-      repoFolder <- private$.repoFolder
-      toolType <- private$.toolType # get tool type to differ build
-
-      # get elements
-      studyName <- private$.studyMeta$studyTitle
-      if (toolType == "dbms") {
-        configBlocks <- purrr::map_chr(
-          private$.execOptions$dbConnectionBlocks,
-          ~.x$configBlockName
+      tryCatch({
+        configBlocks <- if (private$.toolType == "dbms") {
+          purrr::map_chr(private$.execOptions$dbConnectionBlocks, ~.x$configBlockName)
+        } else {
+          ""
+        }
+        
+        addMainFile(
+          repoName = private$.repoName,
+          repoFolder = private$.repoFolder,
+          toolType = private$.toolType,
+          configBlocks = configBlocks,
+          studyName = private$.studyMeta$studyTitle
         )
-      } else {
-        configBlocks <- ""
-      }
-
-      addMainFile(
-        repoName = repoName,
-        repoFolder = repoFolder,
-        toolType = toolType,
-        configBlocks = configBlocks,
-        studyName = studyName
-      )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize main execution file: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     },
 
     .initAgent = function() {
-      repoPath <- fs::path(private$.repoFolder, private$.repoName) |>
-        fs::path_expand()
-
-      # Create .agent folder
-      agent_folder <- fs::path(repoPath, ".agent")
-      fs::dir_create(agent_folder)
-
-      # Copy agent_skills.md template
-      agent_template <- fs::path_package("picard", "templates/agent_skills.md") |>
-        readr::read_file()
-
-      agent_file <- fs::path(agent_folder, "agent_skills.md")
-      readr::write_file(
-        x = agent_template,
-        file = agent_file
-      )
-
-      actionItem(glue::glue_col("Initialize Agent Skills: {green {fs::path(agent_folder, 'agent_skills.md')}}"))
-      invisible(agent_file)
+      repoPath <- private$.getRepoPath()
+      tryCatch({
+        agent_folder <- fs::path(repoPath, ".agent")
+        fs::dir_create(agent_folder)
+        
+        agent_template <- fs::path_package("picard", "templates/agent_skills.md") |>
+          readr::read_file()
+        
+        agent_file <- fs::path(agent_folder, "agent_skills.md")
+        readr::write_file(x = agent_template, file = agent_file)
+        
+        cli::cli_alert_success("Created {.file {fs::path_rel(agent_file)}}")
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize agent configuration: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
     }
   ),
   active = list(
-
     repoName = function(value) {
-      if(missing(value)) {
-        sm <- private$.repoName
-        return(sm)
-      }
+      if (missing(value)) return(private$.repoName)
       checkmate::assert_string(x = value, min.chars = 1)
       private[[".repoName"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('repoName')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field repoName}")
     },
 
     repoFolder = function(value) {
-      if(missing(value)) {
-        sm <- private$.repoFolder
-        return(sm)
-      }
+      if (missing(value)) return(private$.repoFolder)
       checkmate::assert_string(x = value, min.chars = 1)
       private[[".repoFolder"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('repoFolder')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field repoFolder}")
     },
 
     toolType = function(value) {
-      if(missing(value)) {
-        sm <- private$.toolType
-        return(sm)
-      }
-      checkmate::assert_string(x = value, min.chars = 1)
+      if (missing(value)) return(private$.toolType)
+      checkmate::assert_choice(x = value, choices = c("dbms", "external"))
       private[[".toolType"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('toolType')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field toolType}")
     },
 
     studyMeta = function(value) {
-      if(missing(value)) {
-        sm <- private$.studyMeta
-        return(sm)
-      }
-      .setCkass(private = private, key = ".studyMeta", value = value, class = "StudyMeta")
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('studyMeta')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      if(missing(value)) return(private$.studyMeta)
+      .setClass(private = private, key = ".studyMeta", value = value, class = "StudyMeta")
+      cli::cli_alert_info("Updated {.field studyMeta}")
     },
+
     gitRemote = function(value) {
-      if(missing(value)) {
-        sm <- private$.gitRemote
-        return(sm)
-      }
-      .setString(private = private, key = ".gitRemote", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('gitRemote')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      if (missing(value)) return(private$.gitRemote)
+      checkmate::assert_string(x = value, null.ok = TRUE)
+      private[[".gitRemote"]] <- value
+      cli::cli_alert_info("Updated {.field gitRemote}")
     },
+
     renvLock = function(value) {
-      if(missing(value)) {
-        sm <- private$.renvLock
-        return(sm)
-      }
-      .setString(private = private, key = ".renvLock", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('renvLock')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      if (missing(value)) return(private$.renvLock)
+      checkmate::assert_string(x = value, null.ok = TRUE)
+      private[[".renvLock"]] <- value
+      cli::cli_alert_info("Updated {.field renvLock}")
     }
   )
 )
@@ -360,40 +311,21 @@ ContributorLine <- R6::R6Class(
   ),
   active = list(
     name = function(value) {
-      if(missing(value)) {
-        sm <- private$.name
-        return(sm)
-      }
+      if (missing(value)) return(private$.name)
       .setString(private = private, key = ".name", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Contributor Name')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated contributor {.field name}")
     },
+
     email = function(value) {
-      if(missing(value)) {
-        sm <- private$.email
-        return(sm)
-      }
+      if (missing(value)) return(private$.email)
       .setString(private = private, key = ".email", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Contributor Email')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated contributor {.field email}")
     },
+
     role = function(value) {
-      if(missing(value)) {
-        sm <- private$.role
-        return(sm)
-      }
+      if (missing(value)) return(private$.role)
       .setString(private = private, key = ".role", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Contributor Role')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated contributor {.field role}")
     }
   )
 )
@@ -483,79 +415,42 @@ StudyMeta <- R6::R6Class(
   ),
   active = list(
     studyTitle = function(value) {
-      if(missing(value)) {
-        sm <- private$.studyTitle
-        return(sm)
-      }
+      if (missing(value)) return(private$.studyTitle)
       .setString(private = private, key = ".studyTitle", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('studyTitle')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field studyTitle}")
     },
+
     therapeuticArea = function(value) {
-      if(missing(value)) {
-        sm <- private$.therapeuticArea
-        return(sm)
-      }
+      if (missing(value)) return(private$.therapeuticArea)
       .setString(private = private, key = ".therapeuticArea", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('therapeuticArea')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field therapeuticArea}")
     },
+
     studyType = function(value) {
-      if(missing(value)) {
-        sm <- private$.studyType
-        return(sm)
-      }
+      if (missing(value)) return(private$.studyType)
       .setString(private = private, key = ".studyType", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('studyType')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field studyType}")
     },
+
     studyTags = function(value) {
-      if(missing(value)) {
-        sm <- private$.studyTags
-        return(sm)
-      }
+      if (missing(value)) return(private$.studyTags)
       checkmate::assert_character(x = value)
       private[[".studyTags"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Study Tags')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field studyTags}")
     },
+
     studyLinks = function(value) {
-      if(missing(value)) {
-        sm <- private$.studyLinks
-        return(sm)
-      }
+      if (missing(value)) return(private$.studyLinks)
       checkmate::assert_character(x = value)
       private[[".studyLinks"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Study Links')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field studyLinks}")
     },
+
     contributors = function(value) {
-      if(missing(value)) {
-        ctbs <- private$.contributors
-        return(ctbs)
-      }
+      if (missing(value)) return(private$.contributors)
       checkmate::assert_list(x = value, min.len = 1, types = "ContributorLine")
       private[[".contributors"]] <- value
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('Study Contributors')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field contributors}")
     }
   )
 )
@@ -616,70 +511,33 @@ DbConfigBlock <- R6::R6Class(
   ),
   active = list(
     configBlockName = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.configBlockName
-        return(cds)
-      }
-      # replace the cdmDatabaseSchema
+      if (missing(value)) return(private$.configBlockName)
       .setString(private = private, key = ".configBlockName", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('configBlockName')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field configBlockName}")
     },
+
     cdmDatabaseSchema = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.cdmDatabaseSchema
-        return(cds)
-      }
+      if (missing(value)) return(private$.cdmDatabaseSchema)
       .setString(private = private, key = ".cdmDatabaseSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('cdmDatabaseSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field cdmDatabaseSchema}")
     },
+
     cohortTable = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.cohortTable
-        return(cds)
-      }
+      if (missing(value)) return(private$.cohortTable)
       .setString(private = private, key = ".cohortTable", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('cohortTable')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field cohortTable}")
     },
+
     databaseName = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.databaseName
-        return(cds)
-      }
+      if (missing(value)) return(private$.databaseName)
       .setString(private = private, key = ".databaseName", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('databaseName')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field databaseName}")
     },
+
     databaseLabel = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.databaseLabel
-        return(cds)
-      }
+      if (missing(value)) return(private$.databaseLabel)
       .setString(private = private, key = ".databaseLabel", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('databaseLabel')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field databaseLabel}")
     }
   )
 )
@@ -758,60 +616,28 @@ ExecOptions <- R6::R6Class(
   ),
   active = list(
     dbms = function(value) {
-      if(missing(value)) {
-        sm <- private$.dbms
-        return(sm)
-      }
+      if (missing(value)) return(private$.dbms)
       .setString(private = private, key = ".dbms", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('dbms')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field dbms}")
     },
+
     workDatabaseSchema = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        cds <- private$.workDatabaseSchema
-        return(cds)
-      }
-      # replace the workDatabaseSchema
+      if (missing(value)) return(private$.workDatabaseSchema)
       .setString(private = private, key = ".workDatabaseSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('workDatabaseSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field workDatabaseSchema}")
     },
+
     tempEmulationSchema = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        tes <- private$.tempEmulationSchema
-        return(tes)
-      }
-      # replace the tempEmulationSchema
+      if (missing(value)) return(private$.tempEmulationSchema)
       .setString(private = private, key = ".tempEmulationSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('tempEmulationSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field tempEmulationSchema}")
     },
+
     dbConnectionBlocks = function(value) {
-      # return the value if nothing added
-      if(missing(value)) {
-        tes <- private$.dbConnectionBlocks
-        return(tes)
-      }
-      # replace the dbConnectionBlocks
+      if (missing(value)) return(private$.dbConnectionBlocks)
       checkmate::assert_list(x = value, min.len = 1, types = "DbConfigBlock")
       private[[".dbConnectionBlocks"]] <- value
-
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('dbConnectionBlocks')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {.field dbConnectionBlocks}")
     }
   )
 )

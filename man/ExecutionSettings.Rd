@@ -72,41 +72,72 @@ An R6 class to define an ExecutionSettings object
 \if{html}{\out{<a id="method-ExecutionSettings-getDbms"></a>}}
 \if{latex}{\out{\hypertarget{method-ExecutionSettings-getDbms}{}}}
 \subsection{Method \code{getDbms()}}{
-extract the dbms dialect
+Extract the DBMS dialect
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ExecutionSettings$getDbms()}\if{html}{\out{</div>}}
 }
 
+\subsection{Details}{
+Prioritizes active connection DBMS over connectionDetails DBMS
+}
+
+\subsection{Returns}{
+Character. The DBMS type (e.g., "postgresql", "snowflake")
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ExecutionSettings-connect"></a>}}
 \if{latex}{\out{\hypertarget{method-ExecutionSettings-connect}{}}}
 \subsection{Method \code{connect()}}{
-connect to dbms
+Connect to DBMS using connectionDetails
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ExecutionSettings$connect()}\if{html}{\out{</div>}}
 }
 
+\subsection{Details}{
+Creates a new connection if one doesn't exist. If a connection already exists,
+validates it and returns a message. If validation fails, attempts to reconnect.
+}
+
+\subsection{Returns}{
+Invisible NULL
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ExecutionSettings-disconnect"></a>}}
 \if{latex}{\out{\hypertarget{method-ExecutionSettings-disconnect}{}}}
 \subsection{Method \code{disconnect()}}{
-disconnect from dbms
+Disconnect from DBMS
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ExecutionSettings$disconnect()}\if{html}{\out{</div>}}
 }
 
+\subsection{Details}{
+Closes the active connection and clears the connection object.
+Safe to call even if no connection exists.
+}
+
+\subsection{Returns}{
+Invisible NULL
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ExecutionSettings-getConnection"></a>}}
 \if{latex}{\out{\hypertarget{method-ExecutionSettings-getConnection}{}}}
 \subsection{Method \code{getConnection()}}{
-retrieve the connection object
+Retrieve the active connection object
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ExecutionSettings$getConnection()}\if{html}{\out{</div>}}
 }
 
+\subsection{Details}{
+Returns the connection if it exists and is valid. Otherwise returns NULL
+with an informative message. Use this to check connection status before database operations.
+}
+
+\subsection{Returns}{
+DatabaseConnectorJdbcConnection or NULL
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ExecutionSettings-clone"></a>}}

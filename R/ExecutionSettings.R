@@ -22,7 +22,18 @@ ExecutionSettings <- R6::R6Class(
                           tempEmulationSchema = NULL,
                           cohortTable = NULL,
                           databaseName = NULL) {
-      stopifnot(is.null(connectionDetails) || is.null(connection))
+      # Validate: must provide exactly one of connectionDetails or connection
+      has_details <- !is.null(connectionDetails)
+      has_connection <- !is.null(connection)
+      
+      if (!has_details && !has_connection) {
+        stop("Must provide either 'connectionDetails' or 'connection'", call. = FALSE)
+      }
+      
+      if (has_details && has_connection) {
+        stop("Cannot provide both 'connectionDetails' and 'connection'. Choose one.", call. = FALSE)
+      }
+      
       .setClass(private = private, key = "connectionDetails", value = connectionDetails,
                 class = "ConnectionDetails", nullable = TRUE)
       .setClass(private = private, key = ".connection", value = connection,
@@ -33,56 +44,134 @@ ExecutionSettings <- R6::R6Class(
       .setString(private = private, key = ".cohortTable", value = cohortTable)
       .setString(private = private, key = ".databaseName", value = databaseName)
     },
-    #' @description extract the dbms dialect
+    
+    #' @description Extract the DBMS dialect
+    #' @return Character. The DBMS type (e.g., "postgresql", "snowflake")
+    #' @details Prioritizes active connection DBMS over connectionDetails DBMS
     getDbms = function() {
       conObj <- private$.connection
       if (!is.null(conObj)) {
-        dbms <- conObj@dbms
+        tryCatch({
+          dbms <- conObj@dbms
+          if (is.null(dbms) || is.na(dbms)) {
+            stop("Unable to extract DBMS from connection object", call. = FALSE)
+          }
+          return(dbms)
+        }, error = function(e) {
+          stop("Failed to get DBMS from active connection: ", e$message, call. = FALSE)
+        })
+      } else if (!is.null(private$connectionDetails)) {
+        tryCatch({
+          dbms <- private$connectionDetails$dbms
+          if (is.null(dbms) || is.na(dbms)) {
+            stop("DBMS not set in connectionDetails", call. = FALSE)
+          }
+          return(dbms)
+        }, error = function(e) {
+          stop("Failed to get DBMS from connectionDetails: ", e$message, call. = FALSE)
+        })
       } else {
-        dbms <- private$connectionDetails$dbms
+        stop("No connection or connectionDetails available to determine DBMS", call. = FALSE)
       }
-      return(dbms)
     },
-    #' @description connect to dbms
+    
+    #' @description Connect to DBMS using connectionDetails
+    #' @details Creates a new connection if one doesn't exist. If a connection already exists, 
+    #'   validates it and returns a message. If validation fails, attempts to reconnect.
+    #' @return Invisible NULL
     connect = function() {
-
-      # check if private$connection is NULL
       conObj <- private$.connection
-      if (is.null(conObj)) {
-        private$.connection <- DatabaseConnector::connect(private$connectionDetails)
-      } else{
-        cli::cat_bullet(
-          "Connection object already open",
-          bullet = "info",
-          bullet_col = "blue"
-        )
+      
+      if (is.null(private$connectionDetails)) {
+        stop("connectionDetails not set. Cannot establish connection.", call. = FALSE)
       }
+      
+      if (!is.null(conObj)) {
+        # Connection exists, try to validate it
+        if (private$validateConnection(conObj)) {
+          cli::cli_alert_info("Connection already established and active")
+          return(invisible(NULL))
+        } else {
+          cli::cli_alert_warning("Existing connection is no longer valid. Attempting to reconnect...")
+          tryCatch({
+            DatabaseConnector::disconnect(conObj)
+          }, error = function(e) {
+            # Silently ignore disconnect errors for invalid connections
+          })
+          private$.connection <- NULL
+        }
+      }
+      
+      # Establish new connection
+      tryCatch({
+        cli::cli_alert_info("Connecting to {private$connectionDetails$dbms}...")
+        new_connection <- DatabaseConnector::connect(private$connectionDetails)
+        
+        if (is.null(new_connection)) {
+          stop("DatabaseConnector::connect() returned NULL", call. = FALSE)
+        }
+        
+        private$.connection <- new_connection
+        cli::cli_alert_success("Successfully connected to {private$connectionDetails$dbms}")
+        invisible(NULL)
+      }, error = function(e) {
+        stop("Failed to connect to database: ", e$message, call. = FALSE)
+      })
     },
 
-    #' @description disconnect from dbms
+    #' @description Disconnect from DBMS
+    #' @details Closes the active connection and clears the connection object.
+    #'   Safe to call even if no connection exists.
+    #' @return Invisible NULL
     disconnect = function() {
-
-      # check if private$connection is NULL
       conObj <- private$.connection
-      if (class(conObj) == "DatabaseConnectorJdbcConnection") {
-        # disconnect connection
-        DatabaseConnector::disconnect(private$.connection)
-        private$.connection <- NULL
+      
+      if (is.null(conObj)) {
+        cli::cli_alert_info("No active connection to disconnect")
+        return(invisible(NULL))
       }
-
-      cli::cat_bullet(
-        "Connection object has been disconected",
-        bullet = "info",
-        bullet_col = "blue"
-      )
-      invisible(conObj)
+      
+      if (!inherits(conObj, "DatabaseConnectorJdbcConnection")) {
+        cli::cli_alert_warning("Connection object is not valid type. Clearing reference.")
+        private$.connection <- NULL
+        return(invisible(NULL))
+      }
+      
+      tryCatch({
+        DatabaseConnector::disconnect(conObj)
+        private$.connection <- NULL
+        cli::cli_alert_success("Connection successfully closed")
+      }, error = function(e) {
+        cli::cli_alert_warning("Error during disconnect: {e$message}. Clearing connection reference.")
+        private$.connection <- NULL
+      })
+      
+      invisible(NULL)
     },
 
-    #TODO make this more rigorous
-    # add warning if no connection available
-    #' @description retrieve the connection object
+    #' @description Retrieve the active connection object
+    #' @details Returns the connection if it exists and is valid. Otherwise returns NULL
+    #'   with an informative message. Use this to check connection status before database operations.
+    #' @return DatabaseConnectorJdbcConnection or NULL
     getConnection = function() {
       conObj <- private$.connection
+      
+      if (is.null(conObj)) {
+        cli::cli_alert_warning("No active database connection. Call $connect() to establish one.")
+        return(NULL)
+      }
+      
+      if (!inherits(conObj, "DatabaseConnectorJdbcConnection")) {
+        cli::cli_alert_warning("Connection object is invalid. Call $connect() to re-establish connection.")
+        return(NULL)
+      }
+      
+      # Validate connection is still active
+      if (!private$validateConnection(conObj)) {
+        cli::cli_alert_warning("Connection appears to be closed. Call $connect() to re-establish connection.")
+        return(NULL)
+      }
+      
       return(conObj)
     }
 
@@ -95,7 +184,20 @@ ExecutionSettings <- R6::R6Class(
     .workDatabaseSchema = NULL,
     .tempEmulationSchema = NULL,
     .cohortTable = NULL,
-    .databaseName = NULL
+    .databaseName = NULL,
+    
+    validateConnection = function(conObj) {
+      if (is.null(conObj)) return(FALSE)
+      if (!inherits(conObj, "DatabaseConnectorJdbcConnection")) return(FALSE)
+      
+      tryCatch({
+        # Attempt a simple query to validate connection
+        result <- DatabaseConnector::querySql(conObj, "SELECT 1 as test")
+        return(!is.null(result) && nrow(result) > 0)
+      }, error = function(e) {
+        return(FALSE)
+      })
+    }
   ),
 
   active = list(
@@ -108,11 +210,7 @@ ExecutionSettings <- R6::R6Class(
       }
       # replace the cdmDatabaseSchema
       .setString(private = private, key = ".cdmDatabaseSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('cdmDatabaseSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {crayon::cyan('cdmDatabaseSchema')} to {crayon::green(value)}")
     },
 
     #' @field workDatabaseSchema the schema containing the cohort table
@@ -124,11 +222,7 @@ ExecutionSettings <- R6::R6Class(
       }
       # replace the workDatabaseSchema
       .setString(private = private, key = ".workDatabaseSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('workDatabaseSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {crayon::cyan('workDatabaseSchema')} to {crayon::green(value)}")
     },
 
     #' @field tempEmulationSchema the schema needed for temp tables
@@ -140,12 +234,9 @@ ExecutionSettings <- R6::R6Class(
       }
       # replace the tempEmulationSchema
       .setString(private = private, key = ".tempEmulationSchema", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('tempEmulationSchema')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {crayon::cyan('tempEmulationSchema')} to {crayon::green(value)}")
     },
+    
     #' @field cohortTable the table containing the cohorts
     cohortTable = function(value) {
       # return the value if nothing added
@@ -155,12 +246,9 @@ ExecutionSettings <- R6::R6Class(
       }
       # replace the cohortTable
       .setString(private = private, key = ".cohortTable", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('cohortTable')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {crayon::cyan('cohortTable')} to {crayon::green(value)}")
     },
+    
     #' @field databaseName the name of the source data of the cdm
     databaseName = function(value) {
       # return the value if nothing added
@@ -170,11 +258,7 @@ ExecutionSettings <- R6::R6Class(
       }
       # replace the databaseName
       .setString(private = private, key = ".databaseName", value = value)
-      cli::cat_bullet(
-        glue::glue("Replaced {crayon::cyan('databaseName')} with {crayon::green(value)}"),
-        bullet = "info",
-        bullet_col = "blue"
-      )
+      cli::cli_alert_info("Updated {crayon::cyan('databaseName')} to {crayon::green(value)}")
     }
 
   )
