@@ -289,159 +289,17 @@ resetCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts")
   invisible(NULL)
 }
 
-#' Interactively Create Cohort Load File
-#'
-#' Guides the user through an interactive process to create a cohortsLoad.csv file.
-#' The file contains metadata about cohorts to be imported from ATLAS and is used by
-#' [importAtlasCohorts()] to fetch and save cohort definitions.
-#'
-#' @param cohortsFolderPath Character. Path to the cohorts folder where cohortsLoad.csv
-#'   will be saved. Defaults to "inputs/cohorts".
-#'
-#' @return Invisibly returns a data frame containing the cohort load metadata.
-#'   Saves the file to `cohortsFolderPath/cohortsLoad.csv`.
-#'
-#' @details
-#' The function prompts the user to enter information for each cohort:
-#' - **atlasId**: ATLAS cohort definition ID (numeric)
-#' - **label**: Human-readable name for the cohort (character)
-#' - **category**: Broad category/classification (character)
-#' - **subCategory**: More specific sub-category (character)
-#'
-#' After each cohort entry, the user is asked whether to add another cohort.
-#' When complete, the data is saved to `cohortsLoad.csv` in the cohorts folder.
-#'
-#' **Workflow:**
-#' 1. Call this function to interactively create the load file
-#' 2. Use [importAtlasCohorts()] to import cohorts from ATLAS using this file
-#' 3. Use [loadCohortManifest()] to load the imported cohorts and build the manifest
-#'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#'   # Create the load file interactively
-#'   createCohortsLoadFile()
-#'
-#'   # Then import cohorts from ATLAS
-#'   importAtlasCohorts(
-#'     cohortLoadPath = "inputs/cohorts/cohortsLoad.csv",
-#'     atlasConnection = atlas_conn
-#'   )
-#' }
-#'
-createCohortsLoadFile <- function(cohortsFolderPath = here::here("inputs/cohorts")) {
-  cli::cli_h1("Create Cohort Load File")
-  cli::cli_text("Enter cohort information to be imported from ATLAS.")
-  cli::cli_text("You will be prompted for each cohort field. Press Enter to continue.")
-  cli::cli_text("")
-
-  # Initialize data frame
-  cohort_load <- data.frame(
-    atlasId = integer(),
-    label = character(),
-    category = character(),
-    subCategory = character(),
-    file_name = character(),
-    stringsAsFactors = FALSE
-  )
-
-  # Interactive loop to add cohorts
-  continue_adding <- TRUE
-  cohort_count <- 0
-
-  while (continue_adding) {
-    cohort_count <- cohort_count + 1
-    cli::cli_h2("Cohort {cohort_count}")
-
-    # Get atlasId
-    while (TRUE) {
-      atlas_id_input <- readline("Enter ATLAS Cohort ID (numeric): ")
-      if (atlas_id_input == "") {
-        cli::cli_alert_warning("ATLAS ID cannot be empty. Please try again.")
-        next
-      }
-      atlas_id <- tryCatch(as.integer(atlas_id_input), warning = function(w) NA)
-      if (is.na(atlas_id)) {
-        cli::cli_alert_warning("ATLAS ID must be a number. Please try again.")
-        next
-      }
-      break
-    }
-
-    # Get label
-    while (TRUE) {
-      label <- readline("Enter Cohort Label/Name: ")
-      if (label == "") {
-        cli::cli_alert_warning("Label cannot be empty. Please try again.")
-        next
-      }
-      break
-    }
-
-    # Get category
-    while (TRUE) {
-      category <- readline("Enter Category: ")
-      if (category == "") {
-        cli::cli_alert_warning("Category cannot be empty. Please try again.")
-        next
-      }
-      break
-    }
-
-    # Get subCategory
-    sub_category <- readline("Enter Sub-Category (optional, press Enter to skip): ")
-    if (sub_category == "") {
-      sub_category <- NA_character_
-    }
-
-    # Generate file name
-    file_name <- fs::path("json", paste0(label, ".json"))
-
-    # Add to data frame
-    cohort_load <- rbind(cohort_load, data.frame(
-      atlasId = atlas_id,
-      label = label,
-      category = category,
-      subCategory = sub_category,
-      file_name = file_name,
-      stringsAsFactors = FALSE
-    ))
-
-    cli::cli_alert_success("Added cohort: {label}")
-    cli::cli_text("")
-
-    # Ask if user wants to add another cohort
-    add_another <- readline("Add another cohort? (yes/no): ")
-    continue_adding <- tolower(trimws(add_another)) %in% c("yes", "y")
-  }
-
-  # Save to file
-  if (nrow(cohort_load) > 0) {
-    fs::dir_create(cohortsFolderPath)
-    save_path <- fs::path(cohortsFolderPath, "cohortsLoad.csv")
-
-    readr::write_csv(cohort_load, file = save_path)
-    cli::cli_alert_success("Cohort load file saved: {fs::path_rel(save_path)}")
-    cli::cli_alert_info("Total cohorts to import: {nrow(cohort_load)}")
-    cli::cli_text("")
-    cli::cli_alert_info("Next step: Call importAtlasCohorts() to import these cohorts from ATLAS")
-  } else {
-    cli::cli_alert_warning("No cohorts were added. File not saved.")
-  }
-
-  invisible(cohort_load)
-}
-
 #' Launch Interactive Cohort Load File Editor
 #'
-#' Opens an interactive Shiny application for creating and editing the cohortsLoad.csv file.
-#' The app allows viewing, editing, adding, and deleting cohort entries in a tabular format.
+#' Opens an interactive Shiny application for creating, viewing and editing the cohort
+#' load metadata file (cohortsLoad.csv). This allows you to add, remove,
+#' and modify cohort metadata including labels, tags, and ATLAS IDs
+#' without manually editing the CSV file.
 #'
 #' @param cohortsFolderPath Character. Path to the cohorts folder where cohortsLoad.csv
 #'   will be saved. Defaults to "inputs/cohorts".
 #'
-#' @return Invisibly launches a Shiny app. Saves cohortsLoad.csv when the user submits.
+#' @return Invisibly launches a Shiny app. Saves cohortsLoad.csv when the user user clicks "Save".
 #'
 #' @details
 #' **Features:**
@@ -702,50 +560,7 @@ parseTagsString <- function(tags_str) {
 
 
 
-importAtlasConceptSetsFromManifest <- function(
-    conceptSetManifest,
-    atlasConnection,
-    outputFolder = here::here("inputs/conceptSets/json")
-) {
 
-  for (i in 1:nrow(conceptSetManifest)) {
-    if (is.na(conceptSetManifest$atlasId[i])) {
-      next
-    }
-    concept_set <- atlasConnection$getConceptSetDefinition(conceptSetId = conceptSetManifest$atlasId[i])
-    conceptSetManifest$name[i] <- concept_set$saveName[1]
-    conceptSetManifest$expression[i] <- concept_set$expression[1]
-  }
-
-  for (j in 1:nrow(conceptSetManifest)) {
-    if (is.na(conceptSetManifest$atlasId[i])) {
-      next
-    }
-    csCategory <- snakecase::to_snake_case(conceptSetManifest$category[j])
-    csSubCategory <- ifelse(is.na(conceptSetManifest$subCategory[j]), "", snakecase::to_snake_case(conceptSetManifest$subCategory[j]))
-    subDirs<- fs::path(csCategory, csSubCategory)
-    savePath <- outputFolder |>
-      fs::dir_create(subDirs)
-    savePathRel <- fs::path_rel(savePath)
-
-    # Save concept set expression to json folder
-    saveNameTmp <- conceptSetManifest$name[j]
-    fileNameTmp <- fs::path(savePath, saveNameTmp, ext = "json")
-    csExpTmp <- conceptSetManifest$expression[j]
-    readr::write_file(csExpTmp, file = fileNameTmp)
-      cli::cat_bullet(
-        glue::glue("Circe ConceptSet Json {crayon::magenta(saveNameTmp)} saved to: {crayon::cyan(savePath)}"),
-        bullet = "pointer",
-        bullet_col = "yellow"
-      )
-    conceptSetManifest$path[j] <- fs::path(savePathRel, saveNameTmp, ext = "json")
-  }
-
-  conceptSetManifest <- conceptSetManifest |>
-    dplyr::select(-expression)
-
-  invisible(conceptSetManifest)
-}
 
 #' Import CIRCE Cohort Definitions from ATLAS
 #'
