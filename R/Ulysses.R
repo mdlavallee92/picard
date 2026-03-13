@@ -66,10 +66,7 @@ UlyssesStudy <- R6::R6Class(
         notification("Step 2: Adding Standard Ulysses Folders")
       }
 
-      folders <- listDefaultFolders()
-
-      pp <- fs::path("./", folders) |>
-        fs::dir_create(recurse = TRUE)
+      folders <- listDefaultFolders(repoPath = repoPath)
 
       # Step 3: make default files
       if (verbose) {
@@ -81,7 +78,8 @@ UlyssesStudy <- R6::R6Class(
       private$.initConfigFile() # 3 init config, if external make basic
       private$.initQuarto() # 4 add the study hub stuff
       private$.initMainExec() # 5 add the main.R file, if external make basic
-      #private$.initRenv() # 6 add the renv
+      private$.initAgent() # 6 add the agent skills template
+      #private$.initRenv() # 7 add the renv
       private$.initGit() #initialize git locally this is the last step
 
       if (openProject) {
@@ -231,6 +229,28 @@ UlyssesStudy <- R6::R6Class(
         configBlocks = configBlocks,
         studyName = studyName
       )
+    },
+
+    .initAgent = function() {
+      repoPath <- fs::path(private$.repoFolder, private$.repoName) |>
+        fs::path_expand()
+
+      # Create .agent folder
+      agent_folder <- fs::path(repoPath, ".agent")
+      fs::dir_create(agent_folder)
+
+      # Copy agent_skills.md template
+      agent_template <- fs::path_package("picard", "templates/agent_skills.md") |>
+        readr::read_file()
+
+      agent_file <- fs::path(agent_folder, "agent_skills.md")
+      readr::write_file(
+        x = agent_template,
+        file = agent_file
+      )
+
+      actionItem(glue::glue_col("Initialize Agent Skills: {green {fs::path(agent_folder, 'agent_skills.md')}}"))
+      invisible(agent_file)
     }
   ),
   active = list(
@@ -797,12 +817,11 @@ ExecOptions <- R6::R6Class(
 )
 
 
-listDefaultFolders <- function() {
+listDefaultFolders <- function(repoPath) {
   analysisFolders <- c("src", "tasks", "migrations")
   execFolders <- c('logs', 'results')
   inputFolders <- c("cohorts/json", "cohorts/sql", "conceptSets/json")
   disseminationFolders <- c("quarto", "export/pretty", "export/merge", "documents")
-
 
   folders <- c(
     paste('inputs', inputFolders, sep = "/"),
@@ -811,6 +830,14 @@ listDefaultFolders <- function() {
     paste('dissemination', disseminationFolders, sep = "/"),
     'extras'
   )
+  
+  # Create directories and .gitkeep files to ensure empty folders are tracked by git
+  for (folder in folders) {
+    dir_path <- fs::path(repoPath, folder)
+    fs::dir_create(dir_path, recurse = TRUE)
+    fs::file_create(fs::path(dir_path, ".gitkeep"))
+  }
+  
   return(folders)
 }
 
