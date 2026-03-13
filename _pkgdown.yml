@@ -1,0 +1,71 @@
+url: https://ohdsi.github.io/picard/
+template:
+  bootstrap: 5
+
+home:
+  title: picard - RWE Pipelining Tool
+  description: A pipeline tool for RWE analysis using the OHDSI stack
+
+navbar:
+  structure:
+    left: [home, intro, reference, articles, news]
+    right: [search, github]
+  components:
+    home:
+      icon: fa-home
+      href: index.html
+    reference:
+      text: Reference
+      href: reference/index.html
+    articles:
+      text: Articles
+      href: articles/index.html
+    news:
+      text: Changelog
+      href: news/index.html
+    github:
+      icon: fab fa-github
+      href: https://github.com/OHDSI/picard
+
+reference:
+  - title: "Core Classes"
+    desc: "Main R6 classes for repository and study management"
+    contents:
+      - UlyssesStudy
+      - ExecutionSettings
+      - StudyMeta
+
+  - title: "Cohort Management"
+    desc: "Classes and functions for cohort definitions and manifests"
+    contents:
+      - CohortDef
+      - CohortManifest
+
+  - title: "Concept Set Management"
+    desc: "Classes and functions for concept set management"
+    contents:
+      - ConceptSetDef
+      - ConceptSetManifest
+
+  - title: "Configuration"
+    desc: "Configuration and settings classes"
+    contents:
+      - ExecOptions
+      - DbConfigBlock
+      - ContributorLine
+
+  - title: "Utility Functions"
+    desc: "Helper functions for repository management"
+    contents:
+      - validateUlyssesStructure
+      - starts_with("make")
+      - starts_with("init")
+
+articles:
+  - title: "Getting Started"
+    navbar: ~
+    contents:
+      - starts_with("getting")
+
+development:
+  mode: auto
