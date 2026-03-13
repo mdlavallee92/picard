@@ -1,4 +1,4 @@
-# picard
+# picard <img src="man/figures/picardLogo.png" width=150 alt="logo" align="right"/>
 
 This R package is designed to be an RWE Pipelining Tool favoring OHDSI tools. Like its namesake, the picard package will allow RWE researchers to explore strange new worlds within their data, seeking out new patterns and analyses, and boldly going where no researcher has gone before! 
 
