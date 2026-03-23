@@ -4,10 +4,12 @@
 \alias{execStudyPipeline}
 \title{Function to execute all study task in analysis folder on set of configBlock}
 \usage{
-execStudyPipeline(configBlock, env = rlang::caller_env())
+execStudyPipeline(configBlock, pipelineVersion, env = rlang::caller_env())
 }
 \arguments{
 \item{configBlock}{name of one or multiple configBlock to use in the execution}
+
+\item{pipelineVersion}{the version of the pipeline to use in the execution. This is used to set the output folder for the task results.}
 
 \item{env}{the execution environment}
 }

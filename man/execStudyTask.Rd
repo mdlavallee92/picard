@@ -4,12 +4,26 @@
 \alias{execStudyTask}
 \title{Function to execute a study task in Ulysses}
 \usage{
-execStudyTask(taskFile, configBlock, env = rlang::caller_env())
+execStudyTask(
+  taskFile,
+  configBlock,
+  pipelineVersion,
+  generateCohorts = FALSE,
+  executionSettings = NULL,
+  env = rlang::caller_env()
+)
 }
 \arguments{
 \item{taskFile}{the name of the taskFile. Only use the base name}
 
 \item{configBlock}{the name of the configBlock to use in the execution}
+
+\item{pipelineVersion}{the version of the pipeline to use in the execution. This is used to set the output folder for the task results.}
+
+\item{generateCohorts}{Logical. If TRUE, generates cohorts before executing the task. Defaults to FALSE.}
+
+\item{executionSettings}{An ExecutionSettings object (required if generateCohorts = TRUE).
+Contains database configuration for cohort generation.}
 
 \item{env}{the execution environment}
 }

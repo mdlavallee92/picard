@@ -9,7 +9,7 @@
 
 # B. Dependencies ---------------
 
-library(Ulysses)
+library(picard)
 library(DatabaseConnector)
 library(tidyverse)
 
@@ -18,31 +18,20 @@ library(tidyverse)
 # set config block
 configBlock <- "!||configBlock||!"
 
-# set connection details
-connectionDetails <- DatabaseConnector::createConnectionDetails(
-  dbms = config::get("dbms", config = configBlock),
-  user = config::get("user", config = configBlock),
-  password = config::get("password", config = configBlock),
-  connectionString = config::get("connectionString", config = configBlock)
-)
+#set pipeline version
+pipelineVersion <- "!||pipelineVersion||!"
 
 # set executionSettings
-executionSettings <- Ulysses::createExecutionSettings(
-  connectionDetails = connectionDetails,
-  cdmDatabaseSchema = config::get("cdmDatabaseSchema", config = configBlock),
-  workDatabaseSchema = config::get("workDatabaseSchema", config = configBlock),
-  tempEmulationSchema = config::get("tempEmulationSchema", config = configBlock),
-  cohortTable = config::get("cohortTable", config = configBlock),
-  databaseName = config::get("databaseName", config = configBlock)
-)
-
+executionSettings <- createExecutionSettingsFromConfig(configBlock = configBlock)
 
 # D. Task Settings ------------------
 
 # set output folder
-outputFolder <- here::here("exec/results") |>
-  fs::path(snakecase::to_snake_case(executionSettings$databaseName), "{taskName}") |>
-  fs::dir_create()
+outputFolder <- setOutputFolder(
+  executionSettings = executionSettings, 
+  pipelineVersion = pipelineVersion, 
+  taskName = "{taskName}"
+)
 
 ##### Note: Add code that identifies task settings like cohorts or time windows
 

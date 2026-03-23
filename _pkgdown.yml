@@ -25,7 +25,7 @@ navbar:
       href: news/index.html
     github:
       icon: fab fa-github
-      href: https://github.com/OHDSI/picard
+      href: https://github.com/mdlavallee92/picard
 
 reference:
   - title: "Core Classes"

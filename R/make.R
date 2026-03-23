@@ -308,7 +308,20 @@ createExecutionSettingsFromConfig <- function(
   )
 }
 
-
+#' @title Set Output Folder for Task
+#' @description Create an output folder for a specific task within the results directory, organized by database name and pipelineVersion.
+#' @param executionSettings An ExecutionSettings object containing the databaseName attribute
+#' @param pipelineVersion A character string specifying the pipelineVersion of the analysis (e.g., "v1", "v2")
+#' @param taskName The name of the task for which to create the output folder
+#' @param execPath The base path for results (default is "exec/results" within the project)
+#' @return The path to the created output folder
+#' @export
+setOutputFolder <- function(executionSettings, pipelineVersion, taskName, execPath = here::here("exec/results")) {
+  dbNameSnake <- snakecase::to_snake_case(executionSettings$databaseName)
+  outputFolder <- fs::path(execPath, dbNameSnake, pipelineVersion, taskName) |>
+    fs::dir_create()
+  return(outputFolder)
+}
 
 #' @title Function initializing an R file for an analysis task
 #' @param nameOfTask The name of the analysis task script
@@ -348,7 +361,7 @@ makeTaskFile <- function(
   ) |>
     readr::read_file() |>
     glue::glue(
-      taskName = taskName,
+      taskName = newName,
       author = author,
       description = description,
       studyName = studyName
