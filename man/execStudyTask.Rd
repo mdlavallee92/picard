@@ -7,9 +7,7 @@
 execStudyTask(
   taskFile,
   configBlock,
-  pipelineVersion,
-  generateCohorts = FALSE,
-  executionSettings = NULL,
+  pipelineVersion = "dev",
   env = rlang::caller_env()
 )
 }
@@ -18,12 +16,8 @@ execStudyTask(
 
 \item{configBlock}{the name of the configBlock to use in the execution}
 
-\item{pipelineVersion}{the version of the pipeline to use in the execution. This is used to set the output folder for the task results.}
-
-\item{generateCohorts}{Logical. If TRUE, generates cohorts before executing the task. Defaults to FALSE.}
-
-\item{executionSettings}{An ExecutionSettings object (required if generateCohorts = TRUE).
-Contains database configuration for cohort generation.}
+\item{pipelineVersion}{the version of the pipeline to use in the execution. This is used to set the output folder for the task results.
+the default is "dev" which will place results in a dev folder. This allows users to run and test tasks without impacting the main results folders organized by pipeline version.}
 
 \item{env}{the execution environment}
 }

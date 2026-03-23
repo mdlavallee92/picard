@@ -1,35 +1,186 @@
 #' @title Function to update the study version
-#' @param versionNumber the semantive version number to set as the new project version: 1.0.0
+#' @param versionNumber the semantic version number to set as the new project version: 1.0.0
 #' @param projectPath the path of the project, defaults to the directory of the active Ulysses project
+#' @description Updates the version across the project including config.yml, README.md, and NEWS.md.
+#'   Prompts the user to document changes from the pipeline run as bullet points which are added to NEWS.
+#' @return Invisibly returns the version number
 #' @export
 updateStudyVersion <- function(versionNumber, projectPath = here::here()) {
-
-  if (check_git_status()) {
-    msg <- "There are uncommited changes!!! Please add and commit changes prior to updatng the project version"
-    stop(msg)
+  
+  cli::cli_rule("Update Study Version")
+  
+  # Validate semantic versioning format (MAJOR.MINOR.PATCH)
+  tryCatch({
+    versionParts <- strsplit(versionNumber, "\\.")[[1]]
+    
+    if (length(versionParts) != 3) {
+      cli::cli_alert_danger("Invalid version format: {versionNumber}")
+      cli::cli_bullets(c(
+        x = "Expected format: MAJOR.MINOR.PATCH",
+        i = "Example: 1.2.3",
+        i = "Got: {length(versionParts)} part(s) instead of 3"
+      ))
+      stop("Version must follow semantic versioning (MAJOR.MINOR.PATCH)")
+    }
+    
+    # Verify each part is a non-negative integer
+    versionIntegers <- suppressWarnings(as.integer(versionParts))
+    
+    if (any(is.na(versionIntegers))) {
+      cli::cli_alert_danger("Invalid version format: {versionNumber}")
+      cli::cli_bullets(c(
+        x = "Each version part must be a non-negative integer",
+        i = "Example: 1.2.3 (not 1.2.x or 1.2a.3)"
+      ))
+      stop("Version parts must be valid integers")
+    }
+    
+    if (any(versionIntegers < 0)) {
+      cli::cli_alert_danger("Invalid version format: {versionNumber}")
+      cli::cli_bullets(c(
+        x = "Version parts must be non-negative",
+        i = "Example: 1.2.3 (not 1.-2.3)"
+      ))
+      stop("Version parts must be non-negative")
+    }
+    
+    cli::cli_alert_success("Version format valid: {versionNumber}")
+    
+  }, error = function(e) {
+    if (grepl("Version", e$message)) {
+      stop(e$message)
+    } else {
+      cli::cli_alert_danger("Failed to validate version: {e$message}")
+      stop("Invalid version format")
+    }
+  })
+  
+  cli::cli_alert_info("Updating project version to: {versionNumber}")
+  
+  # Update config.yml
+  tryCatch({
+    configPath <- fs::path(projectPath, "config.yml")
+    configYml <- readr::read_lines(configPath)
+    versionLine <- which(grepl("  version: ", configYml))
+    
+    if (length(versionLine) == 0) {
+      cli::cli_alert_danger("Version line not found in config.yml")
+      stop("Cannot find version configuration in config.yml")
+    }
+    
+    configYml[versionLine] <- glue::glue("  version: {versionNumber}")
+    readr::write_lines(x = configYml, file = configPath)
+    cli::cli_alert_success("Updated config.yml")
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to update config.yml: {e$message}")
+    stop("Error updating config.yml")
+  })
+  
+  # Update README.md
+  tryCatch({
+    readmePath <- fs::path(projectPath, "README.md")
+    
+    if (!file.exists(readmePath)) {
+      cli::cli_alert_warning("README.md not found - skipping README version update")
+    } else {
+      readmeLines <- readr::read_lines(readmePath)
+      
+      # Look for version badge or version reference
+      versionPatterns <- which(grepl("version|Version|VERSION", readmeLines, ignore.case = TRUE))
+      
+      if (length(versionPatterns) > 0) {
+        # Update first occurrence that looks like a version reference
+        for (idx in versionPatterns) {
+          if (grepl("\\d+\\.\\d+\\.\\d+", readmeLines[idx])) {
+            readmeLines[idx] <- gsub("\\d+\\.\\d+\\.\\d+", versionNumber, readmeLines[idx])
+            readr::write_lines(x = readmeLines, file = readmePath)
+            cli::cli_alert_success("Updated README.md")
+            break
+          }
+        }
+      }
+    }
+    
+  }, error = function(e) {
+    cli::cli_alert_warning("Failed to update README.md: {e$message}")
+  })
+  
+  # Prompt user for change summary
+  cli::cli_rule("Document Changes")
+  cli::cli_alert_info("Enter a summary of changes from this pipeline run.")
+  cli::cli_bullets(c(i = "Use bullet points separated by new lines", i = "Type 'END' on a new line when finished"))
+  
+  changeLines <- character()
+  repeat {
+    userInput <- readline(prompt = "Change (or 'END' to finish): ")
+    
+    if (tolower(trimws(userInput)) == "end") {
+      break
+    }
+    
+    if (trimws(userInput) != "") {
+      # Add bullet point formatting if not already present
+      if (!grepl("^\\s*[-*+]", userInput)) {
+        userInput <- glue::glue("- {userInput}")
+      }
+      changeLines <- c(changeLines, userInput)
+    }
   }
-
-  # read in yml file
-  configYml <- readr::read_lines(fs::path(here::here(), "config.yml"))
-  # find the line where the version is
-  versionLine <- which(grepl("  version: ", configYml))
-  # replace the line with the new version number
-  configYml[versionLine] <- glue::glue("  version: {versionNumber}")
-
-  cli::cat_bullet(
-    glue::glue_col("Update Study Version to: {yellow {versionNumber}}"),
-    bullet = "info",
-    bullet_col = "blue"
-  )
-  cli::cat_bullet(
-    glue::glue_col("Overwrite {cyan config.yml} with update!"),
-    bullet = "info",
-    bullet_col = "blue"
-  )
-
-  # update and overwrite the yml file with the new version
-  readr::write_lines(x = configYml, file = fs::path(here::here(), "config.yml"))
-  updateNews(versionNumber = versionNumber, projectPath = projectPath)
+  
+  # Update NEWS file
+  tryCatch({
+    newsPath <- fs::path(projectPath, "NEWS.md")
+    
+    # Create NEWS file if it doesn't exist
+    if (!file.exists(newsPath)) {
+      cli::cli_alert_info("Creating NEWS.md file")
+      newsContent <- c(
+        "# News",
+        ""
+      )
+    } else {
+      newsContent <- readr::read_lines(newsPath)
+    }
+    
+    # Format new version entry
+    currentDate <- format(Sys.time(), "%Y-%m-%d")
+    versionEntry <- c(
+      glue::glue("## Version {versionNumber} ({currentDate})"),
+      ""
+    )
+    
+    if (length(changeLines) > 0) {
+      versionEntry <- c(versionEntry, changeLines, "")
+    } else {
+      versionEntry <- c(versionEntry, "- No specific changes documented", "")
+    }
+    
+    versionEntry <- c(versionEntry, "")
+    
+    # Prepend new version to NEWS content (keep existing content)
+    updatedNews <- c(versionEntry, newsContent)
+    
+    readr::write_lines(x = updatedNews, file = newsPath)
+    cli::cli_alert_success("Updated NEWS.md")
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to update NEWS.md: {e$message}")
+    stop("Error updating NEWS file")
+  })
+  
+  # Confirmation summary
+  cli::cli_rule("Version Update Summary")
+  cli::cli_alert_success("Version updated to: {versionNumber}")
+  cli::cli_alert_success("Changes documented: {length(changeLines)} item(s)")
+  cli::cli_alert_info("Files updated:")
+  cli::cli_bullets(c(
+    "✓" = "config.yml",
+    "✓" = "README.md",
+    "✓" = "NEWS.md"
+  ))
+  cli::cli_rule()
+  
   invisible(versionNumber)
 }
 
@@ -218,137 +369,16 @@ generateCohorts <- function(executionSettings, pipelineVersion, override = FALSE
   })
 }
 
-#' @title Validate Study Task Script
-#' @description Validates that a study task R script has all required components to work
-#'   in the pipeline. Checks for required sections, template variables, executionSettings
-#'   creation, output folder setup, and non-empty script section.
-#' @param taskFilePath Character. The full path to the task R script to validate.
-#' @return Logical. Returns TRUE if valid. Stops with an error message if validation fails.
-#' @details
-#' A valid study task must contain:
-#' - Section headers: A. Meta, B. Dependencies, C. Connection Settings, D. Task Settings, E. Script
-#' - Template variables: !||configBlock||! and !||pipelineVersion||!
-#' - ExecutionSettings creation (assignment to executionSettings object)
-#' - Output folder creation (assignment to outputFolder object)
-#' - Non-empty E. Script section (more than just the template comment)
-#' @export
-validateStudyTask <- function(taskFilePath) {
-  
-  # Verify file exists
-  if (!file.exists(taskFilePath)) {
-    cli::cli_alert_danger("Task file not found: {fs::path_rel(taskFilePath)}")
-    stop("Task file does not exist")
-  }
-  
-  # Read the file
-  tryCatch({
-    fileContent <- readr::read_file(taskFilePath)
-  }, error = function(e) {
-    cli::cli_alert_danger("Failed to read task file: {e$message}")
-    stop("Error reading task file")
-  })
-  
-  # Split into lines for section checking
-  fileLines <- readr::read_lines(taskFilePath)
-  
-  # List of required sections
-  requiredSections <- c(
-    "A. Meta",
-    "B. Dependencies",
-    "C. Connection Settings",
-    "D. Task Settings",
-    "E. Script"
-  )
-  
-  # Check for required sections
-  missingSections <- character()
-  for (section in requiredSections) {
-    if (!any(grepl(section, fileLines, fixed = TRUE))) {
-      missingSections <- c(missingSections, section)
-    }
-  }
-  
-  if (length(missingSections) > 0) {
-    cli::cli_alert_danger("Missing required sections in task file:")
-    cli::cli_bullets(setNames(missingSections, "x"))
-    stop("Task is missing required sections")
-  }
-  
-  # Check for required template variables
-  requiredVars <- c("!||configBlock||!", "!||pipelineVersion||!")
-  missingVars <- character()
-  
-  for (var in requiredVars) {
-    if (!grepl(var, fileContent, fixed = TRUE)) {
-      missingVars <- c(missingVars, var)
-    }
-  }
-  
-  if (length(missingVars) > 0) {
-    cli::cli_alert_danger("Missing required template variables:")
-    cli::cli_bullets(setNames(missingVars, "x"))
-    stop("Task is missing required configuration variables")
-  }
-  
-  # Check for executionSettings creation
-  if (!grepl("executionSettings\\s*(<-|=)", fileContent)) {
-    cli::cli_alert_danger("Task must create an executionSettings object")
-    cli::cli_bullets(c(
-      i = "Add: {.code executionSettings <- createExecutionSettingsFromConfig(configBlock = configBlock)}"
-    ))
-    stop("executionSettings object not created")
-  }
-  
-  # Check for outputFolder creation
-  if (!grepl("outputFolder\\s*(<-|=)", fileContent)) {
-    cli::cli_alert_danger("Task must create an outputFolder object")
-    cli::cli_bullets(c(
-      i = "Add: {.code outputFolder <- setOutputFolder(executionSettings = executionSettings, ...)} in section D"
-    ))
-    stop("outputFolder object not created")
-  }
-  
-  # Check that E. Script section has actual code (not just template comment)
-  eScriptIndex <- which(grepl("E. Script", fileLines, fixed = TRUE))
-  
-  if (length(eScriptIndex) > 0) {
-    # Get lines after E. Script section
-    scriptLinesStart <- eScriptIndex[1] + 1
-    scriptLines <- fileLines[scriptLinesStart:length(fileLines)]
-    
-    # Remove empty lines and comment lines that are just the template notes
-    codeLines <- scriptLines[
-      scriptLines != "" & 
-      !grepl("^\\s*#.*Note: Add code", scriptLines)
-    ]
-    
-    # Check if there's any actual code (not just comments)
-    actualCode <- codeLines[!grepl("^\\s*#", codeLines)]
-    
-    if (length(actualCode) == 0 || all(trimws(actualCode) == "")) {
-      cli::cli_alert_danger("E. Script section is empty!")
-      cli::cli_bullets(c(
-        i = "Add analysis or processing code under the 'E. Script' section"
-      ))
-      stop("Task has no implementation code in E. Script section")
-    }
-  }
-  
-  cli::cli_alert_success("Task validation successful: {fs::path_rel(taskFilePath)}")
-  invisible(TRUE)
-}
+
 
 #' @title Function to execute a study task in Ulysses
 #' @param taskFile the name of the taskFile. Only use the base name
 #' @param configBlock the name of the configBlock to use in the execution
-#' @param pipelineVersion the version of the pipeline to use in the execution. This is used to set the output folder for the task results.
-#' @param generateCohorts Logical. If TRUE, generates cohorts before executing the task. Defaults to FALSE.
-#' @param executionSettings An ExecutionSettings object (required if generateCohorts = TRUE).
-#'   Contains database configuration for cohort generation.
+#' @param pipelineVersion the version of the pipeline to use in the execution. This is used to set the output folder for the task results. 
+#'  the default is "dev" which will place results in a dev folder. This allows users to run and test tasks without impacting the main results folders organized by pipeline version.
 #' @param env the execution environment
 #' @export
-execStudyTask <- function(taskFile, configBlock, pipelineVersion, 
-                          generateCohorts = FALSE, executionSettings = NULL,
+execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
                           env = rlang::caller_env()) {
 
   cli::cat_rule(glue::glue_col("Run Task: {yellow {taskFile}}"))
@@ -358,21 +388,6 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion,
     bullet_col = "blue"
   )
 
-  # Generate cohorts if requested
-  if (generateCohorts) {
-    if (is.null(executionSettings)) {
-      cli::cli_alert_danger("executionSettings required when generateCohorts = TRUE")
-      stop("executionSettings must be provided to generate cohorts")
-    }
-    
-    cli::cli_alert_info("Generating cohorts before executing task...")
-    tryCatch({
-      generateCohorts(executionSettings, pipelineVersion = pipelineVersion)
-    }, error = function(e) {
-      cli::cli_alert_danger("Cohort generation failed: {e$message}")
-      stop("Cannot proceed without cohorts")
-    })
-  }
 
   fullTaskFilePath <- fs::path("analysis/tasks", taskFile) |>
     fs::path_expand()
@@ -426,26 +441,263 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion,
 
 #' @title Function to execute all study task in analysis folder on set of configBlock
 #' @param configBlock name of one or multiple configBlock to use in the execution
-#' @param pipelineVersion the version of the pipeline to use in the execution. This is used to set the output folder for the task results.
+#' @param updateType the type of version increment: 'major', 'minor', or 'patch'. The current version
+#'   will be read from config.yml and incremented accordingly before pipeline execution.
 #' @param env the execution environment
 #' @export
-execStudyPipeline <- function(configBlock, pipelineVersion, env = rlang::caller_env()) {
-
-  taskFilesToRun <- fs::dir_ls("analysis/tasks", type = "file") |>
-    basename()
-
+execStudyPipeline <- function(configBlock, updateType, env = rlang::caller_env()) {
+  
+  cli::cli_rule("Execute Study Pipeline")
+  
+  # Validate updateType parameter
+  tryCatch({
+    updateType <- tolower(trimws(updateType))
+    if (!(updateType %in% c("major", "minor", "patch"))) {
+      cli::cli_alert_danger("Invalid updateType: {updateType}")
+      cli::cli_bullets(c(
+        x = "updateType must be one of: major, minor, patch",
+        i = "MAJOR - Breaking changes",
+        i = "MINOR - New features, backward compatible",
+        i = "PATCH - Bug fixes, no new features"
+      ))
+      stop("Invalid updateType parameter")
+    }
+  }, error = function(e) {
+    if (grepl("Invalid", e$message)) {
+      stop(e$message)
+    } else {
+      cli::cli_alert_danger("Error validating updateType: {e$message}")
+      stop("Failed to validate updateType")
+    }
+  })
+  
+  # Read current version from config.yml
+  tryCatch({
+    configPath <- fs::path(here::here(), "config.yml")
+    configYml <- readr::read_lines(configPath)
+    versionLine <- which(grepl("  version: ", configYml))
+    
+    if (length(versionLine) == 0) {
+      cli::cli_alert_danger("Version not found in config.yml")
+      stop("Cannot find version in config.yml")
+    }
+    
+    currentVersionLine <- configYml[versionLine[1]]
+    currentVersion <- gsub(".*version:\\s*", "", currentVersionLine)
+    currentVersion <- trimws(currentVersion)
+    
+    cli::cli_alert_info("Current version from config.yml: {currentVersion}")
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to read version from config.yml: {e$message}")
+    stop("Cannot read current version")
+  })
+   
+  # Get list of tasks to run
+  tryCatch({
+    taskFilesToRun <- fs::dir_ls("analysis/tasks", type = "file") |>
+      basename() |>
+      sort()
+    
+    if (length(taskFilesToRun) == 0) {
+      cli::cli_alert_warning("No task files found in analysis/tasks folder")
+      return(invisible(NULL))
+    }
+    
+    cli::cli_alert_info("Found {length(taskFilesToRun)} task(s) to execute")
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to scan tasks folder: {e$message}")
+    stop("Cannot read analysis/tasks directory")
+  })
+  
+  # Increment version based on updateType
+  cli::cli_rule("Version Increment")
+  
+  tryCatch({
+    # Parse current version
+    versionParts <- as.integer(strsplit(currentVersion, "\\.")[[1]])
+    
+    # Increment appropriate version part
+    if (updateType == "major") {
+      versionParts[1] <- versionParts[1] + 1
+      versionParts[2] <- 0
+      versionParts[3] <- 0
+      incrementLabel <- "MAJOR"
+    } else if (updateType == "minor") {
+      versionParts[2] <- versionParts[2] + 1
+      versionParts[3] <- 0
+      incrementLabel <- "MINOR"
+    } else if (updateType == "patch") {
+      versionParts[3] <- versionParts[3] + 1
+      incrementLabel <- "PATCH"
+    }
+    
+    newVersion <- paste0(versionParts, collapse = ".")
+    
+    cli::cli_alert_success("{incrementLabel} increment: {currentVersion} → {newVersion}")
+    
+    # Update version across entire repo (includes semantic version validation)
+    cli::cli_alert_info("Updating version in config.yml...")
+    updateStudyVersion(versionNumber = newVersion)
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to increment version: {e$message}")
+    stop("Version increment failed")
+  })
+  
+  # Create execution settings from first configBlock
+  tryCatch({
+    executionSettings <- createExecutionSettingsFromConfig(configBlock = configBlock[1])
+    cli::cli_alert_success("Execution settings created for config: {configBlock[1]}")
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to create execution settings: {e$message}")
+    stop("Cannot initialize execution settings")
+  })
+  
+  # Setup logging before generating cohorts
+  logFilePath <- NULL
+  tryCatch({
+    logDir <- fs::path(here::here("exec/logs"))
+    if (!dir.exists(logDir)) {
+      dir.create(logDir, recursive = TRUE, showWarnings = FALSE)
+      cli::cli_alert_success("Created logs directory: {fs::path_rel(logDir)}")
+    }
+    
+    # Create log file with version and timestamp
+    dateStamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    logFileName <- glue::glue("picard_log_{newVersion}_{dateStamp}.txt")
+    logFilePath <- fs::path(logDir, logFileName)
+    
+    cli::cli_alert_info("Logging pipeline execution to: {fs::path_rel(logFilePath)}")
+    
+    # Write header to log file
+    logHeader <- c(
+      "================================================================================",
+      glue::glue("Picard Pipeline Execution Log"),
+      glue::glue("Pipeline Version: {newVersion}"),
+      glue::glue("Execution Start Time: {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
+      glue::glue("Config Blocks: {paste(configBlock, collapse = ', ')}"),
+      glue::glue("Update Type: {updateType}"),
+      glue::glue("Tasks: {length(taskFilesToRun)}"),
+      "================================================================================",
+      ""
+    )
+    
+    writeLines(logHeader, con = logFilePath)
+    
+    # Setup sink for logging to capture all output
+    sink(file = logFilePath, append = TRUE, type = "output")
+    on.exit(sink(), add = TRUE)
+    
+    # Log to file that we're starting cohort generation
+    cat(glue::glue("[{format(Sys.time(), '%H:%M:%S')}] Starting cohort generation...\n"), sep = "")
+    
+  }, error = function(e) {
+    cli::cli_alert_warning("Failed to setup logging: {e$message}")
+  })
+  
+  # Generate cohorts before running pipeline
+  cli::cli_alert_info("Generating cohorts for pipeline...")
+  
+  tryCatch({
+    generateCohorts(
+      executionSettings = executionSettings,
+      pipelineVersion = newVersion,
+      override = TRUE
+    )
+  }, error = function(e) {
+    cli::cli_alert_danger("Cohort generation failed: {e$message}")
+    stop("Pipeline cannot proceed without cohorts")
+  })
+  
+  # Run all tasks across all config blocks
+  cli::cli_rule("Running Pipeline Tasks")
+  taskResults <- list()
+  
   for (db in seq_along(configBlock)) {
+    logMsg <- glue::glue("\n[{format(Sys.time(), '%H:%M:%S')}] Processing config block: {configBlock[db]}")
+    cat(logMsg, "\n", sep = "")
+    
+    cli::cli_alert_info("Processing config block: {configBlock[db]}")
+    
     for (task in seq_along(taskFilesToRun)) {
-      execStudyTask(
-        taskFile = taskFilesToRun[task],
-        configBlock = configBlock[db],
-        env = env
-      )
+      taskName <- taskFilesToRun[task]
+      taskKey <- glue::glue("{configBlock[db]}_{taskName}")
+      
+      taskLogMsg <- glue::glue("  [{format(Sys.time(), '%H:%M:%S')}] Executing task {task}/{length(taskFilesToRun)}: {taskName}")
+      cat(taskLogMsg, "\n", sep = "")
+      
+      tryCatch({
+        cli::cli_alert_info("Executing task {task}/{length(taskFilesToRun)}: {taskName}")
+        
+        result <- execStudyTask(
+          taskFile = taskName,
+          configBlock = configBlock[db],
+          pipelineVersion = newVersion,
+          env = env
+        )
+        
+        successMsg <- glue::glue("  [{format(Sys.time(), '%H:%M:%S')}] ✓ Task completed successfully")
+        cat(successMsg, "\n", sep = "")
+        
+        taskResults[[taskKey]] <- list(
+          status = "success",
+          result = result,
+          timestamp = Sys.time()
+        )
+        
+      }, error = function(e) {
+        errorMsg <- glue::glue("  [{format(Sys.time(), '%H:%M:%S')}] ✗ Task failed with error: {e$message}")
+        cat(errorMsg, "\n", sep = "")
+        
+        cli::cli_alert_danger("Task failed: {taskName}")
+        cli::cli_alert_danger("Error: {e$message}")
+        
+        stop(glue::glue("Pipeline halted at task: {taskName}"))
+      })
     }
   }
-
-  invisible(taskFilesToRun)
-
+  
+  # Close sink before summary
+  if (!is.null(logFilePath)) {
+    sink()
+  }
+  
+  # Summary
+  cli::cli_rule("Pipeline Execution Complete")
+  successCount <- sum(sapply(taskResults, function(x) x$status == "success"))
+  failureCount <- sum(sapply(taskResults, function(x) x$status == "failed"))
+  
+  cli::cli_alert_success("Successful tasks: {successCount}")
+  if (failureCount > 0) {
+    cli::cli_alert_warning("Failed tasks: {failureCount}")
+  }
+  
+  cli::cli_alert_info("Pipeline version: {newVersion}")
+  cli::cli_rule()
+  
+  # Append summary to log file
+  if (!is.null(logFilePath)) {
+    summaryLines <- c(
+      "",
+      "================================================================================",
+      "Pipeline Execution Summary",
+      "================================================================================",
+      glue::glue("Pipeline Version: {newVersion}"),
+      glue::glue("Completion Time: {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
+      glue::glue("Successful Tasks: {successCount}"),
+      glue::glue("Failed Tasks: {failureCount}"),
+      glue::glue("Total Tasks: {length(taskResults)}"),
+      glue::glue("Log File: {fs::path_rel(logFilePath)}"),
+      "================================================================================",
+      ""
+    )
+    
+    write(summaryLines, file = logFilePath, append = TRUE)
+    cli::cli_alert_success("Pipeline log saved to: {fs::path_rel(logFilePath)}")
+  }
+  
+  invisible(taskResults)
 }
 
 

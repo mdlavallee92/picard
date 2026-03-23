@@ -7,10 +7,14 @@
 updateStudyVersion(versionNumber, projectPath = here::here())
 }
 \arguments{
-\item{versionNumber}{the semantive version number to set as the new project version: 1.0.0}
+\item{versionNumber}{the semantic version number to set as the new project version: 1.0.0}
 
 \item{projectPath}{the path of the project, defaults to the directory of the active Ulysses project}
 }
+\value{
+Invisibly returns the version number
+}
 \description{
-Function to update the study version
+Updates the version across the project including config.yml, README.md, and NEWS.md.
+Prompts the user to document changes from the pipeline run as bullet points which are added to NEWS.
 }
