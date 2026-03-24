@@ -14,7 +14,7 @@ setOutputFolder(
 \arguments{
 \item{executionSettings}{An ExecutionSettings object containing the databaseName attribute}
 
-\item{pipelineVersion}{A character string specifying the pipelineVersion of the analysis (e.g., "v1", "v2")}
+\item{pipelineVersion}{A character string specifying the pipelineVersion of the analysis (e.g., "0.0.1", "1.0.2")}
 
 \item{taskName}{The name of the task for which to create the output folder}
 

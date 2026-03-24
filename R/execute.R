@@ -376,9 +376,13 @@ generateCohorts <- function(executionSettings, pipelineVersion, override = FALSE
 #' @param configBlock the name of the configBlock to use in the execution
 #' @param pipelineVersion the version of the pipeline to use in the execution. This is used to set the output folder for the task results. 
 #'  the default is "dev" which will place results in a dev folder. This allows users to run and test tasks without impacting the main results folders organized by pipeline version.
+#' @param checkStatus Logical. If TRUE, checks if task needs to be rerun
+#'  based on file changes, dependencies, cohort changes, and previous errors. Automatically builds execution settings from configBlock.
+#'  Default: FALSE
 #' @param env the execution environment
 #' @export
 execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
+                          checkStatus = FALSE,
                           env = rlang::caller_env()) {
 
   cli::cat_rule(glue::glue_col("Run Task: {yellow {taskFile}}"))
@@ -395,7 +399,35 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
   # Verify task file exists
   if (!file.exists(fullTaskFilePath)) {
     cli::cli_alert_danger("Task file not found: {fs::path_rel(fullTaskFilePath)}")
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
+                        "Task file does not exist")
     stop("Task file does not exist")
+  }
+
+  # Check task status if requested
+  if (checkStatus) {
+    # Build execution settings from configBlock
+    tryCatch({
+      executionSettings <- createExecutionSettingsFromConfig(configBlock = configBlock)
+    }, error = function(e) {
+      cli::cli_alert_warning("Could not create execution settings for task status check: {e$message}")
+      executionSettings <<- NULL
+    })
+    
+    if (!is.null(executionSettings)) {
+      statusCheck <- shouldRerunTask(
+        taskFile = fullTaskFilePath,
+        configBlock = configBlock,
+        executionSettings = executionSettings,
+        pipelineVersion = pipelineVersion
+      )
+
+      if (!statusCheck$should_rerun) {
+        cli::cli_alert_success("Task is up to date - skipping execution")
+        recordTaskExecution(taskFile, configBlock, pipelineVersion, "skipped")
+        return(invisible(NULL))
+      }
+    }
   }
 
   # Validate study task structure
@@ -403,6 +435,8 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
     validateStudyTask(fullTaskFilePath)
   }, error = function(e) {
     cli::cli_alert_danger("Task validation failed: {e$message}")
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
+                        paste("Validation failed:", e$message))
     stop("Invalid task structure - cannot execute")
   })
 
@@ -412,6 +446,8 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
       glue::glue(.open = "!||", .close = "||!")
   }, error = function(e) {
     cli::cli_alert_danger("Failed to read task file: {e$message}")
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
+                        paste("Read error:", e$message))
     stop("Error reading task file")
   })
 
@@ -420,22 +456,38 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
     exprs <- rlang::parse_exprs(rLines)
   }, error = function(e) {
     cli::cli_alert_danger("Failed to parse task file: {e$message}")
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
+                        paste("Parse error:", e$message))
     stop("Error parsing task expressions")
   })
 
   # Execute each expression with error handling
   res <- NULL
+  executionError <- NULL
   for (ex in seq_along(exprs)) {
     tryCatch({
       res <- eval(exprs[[ex]], env)
     }, error = function(e) {
       cli::cli_alert_danger("Error executing expression {ex} in task {taskFile}:")
       cli::cli_alert_danger("{e$message}")
+      executionError <<- paste("Expression", ex, "failed:", e$message)
       stop(glue::glue("Task execution failed at expression {ex}"))
     })
+    if (!is.null(executionError)) {
+      break
+    }
   }
 
-  cli::cli_alert_success("Task {taskFile} completed successfully")
+  # Record success or failure
+  if (!is.null(executionError)) {
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
+                        executionError)
+    stop(executionError)
+  } else {
+    recordTaskExecution(taskFile, configBlock, pipelineVersion, "success")
+    cli::cli_alert_success("Task {taskFile} completed successfully")
+  }
+
   invisible(res)
 }
 
@@ -634,6 +686,7 @@ execStudyPipeline <- function(configBlock, updateType, env = rlang::caller_env()
           taskFile = taskName,
           configBlock = configBlock[db],
           pipelineVersion = newVersion,
+          checkStatus = TRUE,
           env = env
         )
         

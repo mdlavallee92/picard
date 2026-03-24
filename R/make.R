@@ -311,7 +311,7 @@ createExecutionSettingsFromConfig <- function(
 #' @title Set Output Folder for Task
 #' @description Create an output folder for a specific task within the results directory, organized by database name and pipelineVersion.
 #' @param executionSettings An ExecutionSettings object containing the databaseName attribute
-#' @param pipelineVersion A character string specifying the pipelineVersion of the analysis (e.g., "v1", "v2")
+#' @param pipelineVersion A character string specifying the pipelineVersion of the analysis (e.g., "0.0.1", "1.0.2")
 #' @param taskName The name of the task for which to create the output folder
 #' @param execPath The base path for results (default is "exec/results" within the project)
 #' @return The path to the created output folder
