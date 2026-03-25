@@ -164,69 +164,6 @@ validateResultsColumns <- function(resultsData, stepName) {
   invisible(TRUE)
 }
 
-#' Execute Post-Processing Pipeline
-#' @description Orchestrates running a series of post-processing steps after pipeline execution
-#' @param dbIds Character vector of database identifiers from config.yml
-#' @param executionSettings ExecutionSettings object for cohort manifest loading
-#' @param postProcessFiles Character vector of CSV file names to consolidate from results
-#' @param outputFolder Character. Path where consolidated results will be saved. 
-#'   Defaults to exec/results/consolidated
-#' @param resultsPath Character. Path to pipeline results folder. 
-#'   Defaults to exec/results
-#' @return Invisibly returns list of consolidated data frames
-#' @details
-#' This function:
-#' 1. Loads cohort metadata from the manifest
-#' 2. Creates results path data frame for each database
-#' 3. Imports and consolidates post-processing files from all databases
-#' 4. Adds cohortLabel to each result set
-#' 5. Saves consolidated results to CSV files
-#' 6. Validates all required columns are present (databaseId, cohortId, cohortLabel)
-#' @export
-executePostProcessing <- function(dbIds,
-                                  executionSettings,
-                                  postProcessFiles,
-                                  outputFolder = here::here("dissemination/export/pretty"),
-                                  resultsPath = here::here("exec/results")) {
-  
-  cli::cli_rule("Execute Post-Processing Pipeline")
-  
-  tryCatch({
-    # Step 1: Load cohort metadata
-    cli::cli_alert_info("Loading cohort metadata...")
-    cohortMetadata <- loadCohortMetadata(executionSettings)
-    cli::cli_alert_success("Loaded {nrow(cohortMetadata)} cohort definitions")
-    
-    # Step 2: Create results path data frame
-    cli::cli_alert_info("Mapping database result paths...")
-    resultsPathDat <- getResultsPathDat(dbIds, resultsPath)
-    cli::cli_alert_success("Found results for {nrow(resultsPathDat)} database(s)")
-    
-    # Step 3: Consolidate post-processing results
-    consolidatedResults <- consolidatePostResults(
-      resultsPathDat,
-      postProcessFiles,
-      cohortMetadata
-    )
-    
-    # Step 4: Save consolidated results
-    cli::cli_alert_info("Saving consolidated results...")
-    fs::dir_create(outputFolder, recurse = TRUE)
-    
-    for (fileName in names(consolidatedResults)) {
-      outputPath <- fs::path(outputFolder, fileName)
-      readr::write_csv(consolidatedResults[[fileName]], outputPath)
-      cli::cli_alert_success("Saved: {fs::path_rel(outputPath)}")
-    }
-    
-    cli::cli_alert_success("Post-processing complete!")
-    
-    invisible(consolidatedResults)
-  }, error = function(e) {
-    cli::cli_alert_danger("Post-processing failed: {e$message}")
-    stop("Post-processing pipeline error")
-  })
-}
 
 #' Review Export File Schema
 #' @description Examines all CSV files in the export folder and extracts schema information
@@ -353,21 +290,227 @@ reviewExportSchema <- function(exportPath = here::here("dissemination/export/mer
   return(schema)
 }
 
-#' Merge Pipeline Results for All Tasks
-#' @description Orchestrates merging of results across all tasks for a specified pipeline version.
-#'   Discovers all task folders for the version, calls importAndBind for each task, and tracks
-#'   the consolidated results.
+#' Validate Cohort Results Completeness
+#' @description Validates that all cohorts in the cohort key have results and checks for 
+#'   non-enumeration. Compares expected cohorts from cohortKey.csv against actual results 
+#'   to identify missing or zero-count cohorts.
+#' @param exportPath Character. Path to export folder containing results. 
+#'   Defaults to "dissemination/export/merge"
+#' @param resultsFileName Character. Name of the results file to validate (e.g., "cohortCounts.csv").
+#'   If NULL, searches for a file with cohort_id, cohort_entries, and cohort_subjects columns.
+#' @return Data frame with columns:
+#'   - cohortId: The cohort ID
+#'   - label: Cohort label from cohortKey
+#'   - validationStatus: "OK", "ZeroCount", or "Missing"
+#'   - details: Additional information about the validation result
+#' @details
+#' The function identifies three validation statuses:
+#' - **OK**: Cohort exists in results with non-zero counts
+#' - **ZeroCount**: Cohort exists but has zero entries or subjects
+#' - **Missing**: Cohort in cohortKey but not found in results (non-enumerated)
+#' @export
+validateCohortResults <- function(exportPath = here::here("dissemination/export/merge"),
+                                  resultsFileName = NULL) {
+  
+  cli::cli_rule("Validate Cohort Results Completeness")
+  
+  # Check if export path exists
+  if (!dir.exists(exportPath)) {
+    cli::cli_alert_danger("Export path does not exist: {fs::path_rel(exportPath)}")
+    stop("Export folder not found")
+  }
+  
+  # Load cohortKey
+  cohortKeyPath <- fs::path(exportPath, "cohortKey.csv")
+  if (!file.exists(cohortKeyPath)) {
+    cli::cli_alert_warning("cohortKey.csv not found: {fs::path_rel(cohortKeyPath)}")
+    return(data.frame(
+      cohortId = integer(),
+      label = character(),
+      validationStatus = character(),
+      details = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  tryCatch({
+    cohortKey <- readr::read_csv(cohortKeyPath, show_col_types = FALSE)
+    cli::cli_alert_success("Loaded cohortKey: {nrow(cohortKey)} cohort(s)")
+  }, error = function(e) {
+    cli::cli_alert_danger("Error reading cohortKey.csv: {e$message}")
+    stop(e$message)
+  })
+  
+  # Find cohort results file
+  csvFiles <- fs::dir_ls(exportPath, glob = "*.csv", type = "file")
+  # Exclude reference files
+  csvFiles <- csvFiles[!basename(csvFiles) %in% c("cohortKey.csv", "databaseInfo.csv", "schema_review.csv")]
+  
+  # If resultsFileName specified, use that; otherwise search for file with cohort_id column
+  resultsFile <- NULL
+  
+  if (!is.null(resultsFileName)) {
+    candidate <- fs::path(exportPath, resultsFileName)
+    if (file.exists(candidate)) {
+      resultsFile <- candidate
+    }
+  } else {
+    # Search for file with cohort_id column
+    for (filePath in csvFiles) {
+      tryCatch({
+        spec <- readr::spec_csv(filePath)
+        if ("cohort_id" %in% names(spec$cols)) {
+          resultsFile <- filePath
+          break
+        }
+      }, error = function(e) {
+        # Skip files with read errors
+      })
+    }
+  }
+  
+  if (is.null(resultsFile)) {
+    cli::cli_alert_warning("No cohort results file found in export path")
+    return(data.frame(
+      cohortId = integer(),
+      label = character(),
+      validationStatus = character(),
+      details = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  resultsFileName <- basename(resultsFile)
+  cli::cli_alert_info("Validating against results file: {resultsFileName}")
+  
+  # Load results file
+  tryCatch({
+    results <- readr::read_csv(resultsFile, show_col_types = FALSE)
+    
+    # Check for required columns
+    requiredCols <- c("cohort_id", "cohort_entries", "cohort_subjects")
+    missingCols <- setdiff(requiredCols, names(results))
+    if (length(missingCols) > 0) {
+      cli::cli_alert_warning("Results file missing expected columns: {paste(missingCols, collapse=', ')}")
+    }
+    
+    cli::cli_alert_success("Loaded results: {nrow(results)} row(s)")
+  }, error = function(e) {
+    cli::cli_alert_danger("Error reading results file: {e$message}")
+    stop(e$message)
+  })
+  
+  # Validate completeness
+  validation <- data.frame(
+    cohortId = integer(),
+    label = character(),
+    validationStatus = character(),
+    details = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in seq_len(nrow(cohortKey))) {
+    cohortId <- cohortKey$cohortId[i]
+    label <- cohortKey$cohortLabel[i]
+    
+    # Check if cohort exists in results
+    resultRow <- results[results$cohort_id == cohortId, ]
+    
+    if (nrow(resultRow) == 0) {
+      # Missing cohort
+      status <- "Missing"
+      details <- "Cohort not found in results (non-enumerated)"
+    } else {
+      # Check for zero counts
+      entries <- resultRow$cohort_entries[1]
+      subjects <- resultRow$cohort_subjects[1]
+      
+      if (is.na(entries) || entries == 0 || is.na(subjects) || subjects == 0) {
+        status <- "ZeroCount"
+        details <- glue::glue("entries: {entries}, subjects: {subjects}")
+      } else {
+        status <- "OK"
+        details <- glue::glue("entries: {entries}, subjects: {subjects}")
+      }
+    }
+    
+    validation <- rbind(validation, data.frame(
+      cohortId = cohortId,
+      label = label,
+      validationStatus = status,
+      details = details,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  # Print summary
+  validation <- tibble::as_tibble(validation)
+  
+  okCount <- sum(validation$validationStatus == "OK")
+  missingCount <- sum(validation$validationStatus == "Missing")
+  zeroCount <- sum(validation$validationStatus == "ZeroCount")
+  
+  cli::cli_alert_success("Validation complete!")
+  cli::cli_bullets(c(
+    "v" = "{okCount} cohort(s) OK",
+    if (zeroCount > 0) c("!" = "{zeroCount} cohort(s) with zero counts") else NULL,
+    if (missingCount > 0) c("x" = "{missingCount} cohort(s) missing/non-enumerated") else NULL
+  ))
+  
+  if (missingCount > 0 || zeroCount > 0) {
+    cli::cli_text("")
+    cli::cli_alert_warning("Review validation details for issues:")
+    issues <- validation[validation$validationStatus != "OK", ]
+    for (i in seq_len(nrow(issues))) {
+      issue <- issues[i, ]
+      cli::cli_bullets(c(
+        " " = "{issue$cohortId}: {issue$label} - {issue$validationStatus} ({issue$details})"
+      ))
+    }
+  }
+  
+  return(validation)
+}
+
+#' Orchestrate Pipeline Export with Merging and QC
+#' @description Orchestrates complete pipeline export process: merges results across all tasks
+#'   for a specified pipeline version, generates reference files (cohortKey, databaseInfo,
+#'   schema_review), runs QC validation on cohort completeness, and generates execution metadata.
 #' @param pipelineVersion Character. Pipeline version (e.g., "1.0.0")
 #' @param dbIds Character vector of database configuration IDs from config.yml
 #' @param resultsPath Character. Path to results root folder. Defaults to "exec/results"
 #' @param exportPath Character. Path where combined results will be saved.
 #'   Defaults to "dissemination/export/merge"
-#' @param executionSettings ExecutionSettings object for cohort manifest loading (optional).
-#'   If provided, generates a cohortKey reference file with id, label, and tags.
+#' @param cohortsFolderPath Character. Path to cohorts folder for the CohortManifest.
+#'   Defaults to "inputs/cohorts". If the path exists and contains a cohort manifest,
+#'   generates a cohortKey reference file with id, label, and tags.
 #' @return Data frame summarizing all merged tasks with columns:
 #'   - taskName: Name of the task
 #'   - fileCount: Number of result files found for that task
 #'   - totalRows: Total rows across all result files
+#'   - filesExported: Comma-separated list of exported file names
+#' @details
+#' The function orchestrates the complete pipeline export:
+#' 1. Validates code state (git commit must be clean)
+#' 2. Validates environment state and snapshots renv.lock
+#' 3. Discovers tasks for the specified pipeline version
+#' 4. Merges results across all databases for each task via importAndBind()
+#' 5. Generates reference files: cohortKey.csv, databaseInfo.csv
+#' 6. Reviews schema of exported files (schema_review.csv)
+#' 7. Validates cohort completeness (qc_cohortValidation.csv)
+#' 8. Generates execution metadata (qc_processMeta.csv)
+#'
+#' Output files created in version export folder:
+#' - Merged result CSVs (per task)
+#' - cohortKey.csv: Cohort reference with ids and metadata
+#' - databaseInfo.csv: Databases included in merge operation
+#' - schema_review.csv: Column-level inspection of all files
+#' - qc_cohortValidation.csv: Cohort completeness validation results
+#' - qc_processMeta.csv: Execution metadata and summary statistics
+#'   - executionTimestamp: When the export ran
+#'   - pipelineVersion: Version being exported
+#'   - codeCommitSha: Git commit SHA of code at execution time
+#'   - lockfileHash: Hash of renv.lock for dependency reproducibility
 #'   - filesExported: Comma-separated list of exported file names
 #' @details
 #' The function:
@@ -393,11 +536,18 @@ reviewExportSchema <- function(exportPath = here::here("dissemination/export/mer
 #'         results.csv
 #' ```
 #' @export
-mergePipelineResults <- function(pipelineVersion, dbIds, resultsPath = here::here("exec/results"),
-                                 exportPath = here::here("dissemination/export/merge"),
-                                 executionSettings = NULL) {
+orchestratePipelineExport <- function(pipelineVersion, dbIds, resultsPath = here::here("exec/results"),
+                                    exportPath = here::here("dissemination/export/merge"),
+                                    cohortsFolderPath = here::here("inputs/cohorts")) {
   
-  cli::cli_rule("Merge Pipeline Results for Version {pipelineVersion}")
+  cli::cli_rule("Orchestrate Pipeline Export for Version {pipelineVersion}")
+  
+  # Validate code state before proceeding
+  codeCommitSha <- validateCodeState()
+  
+  # Validate environment and snapshot dependencies
+  validateEnvironment()
+  lockfileHash <- snapshotEnvironment(versionLabel = pipelineVersion, savePath = NULL)
   
   # Get database names and labels from config
   databaseNames <- purrr::map_chr(dbIds, ~config::get("databaseName", config = .x))
@@ -527,19 +677,20 @@ mergePipelineResults <- function(pipelineVersion, dbIds, resultsPath = here::her
     cli::cli_alert_danger("Error saving database info: {e$message}")
   })
   
-  # Create cohortKey reference file if executionSettings provided
-  if (!is.null(executionSettings)) {
+  # Create cohortKey reference file if cohorts manifest exists
+  if (dir.exists(cohortsFolderPath) && file.exists(fs::path(cohortsFolderPath, "cohortManifest.sqlite"))) {
     tryCatch({
       cli::cli_text("")
       cli::cli_alert_info("Creating cohort key reference file...")
       
-      # Load cohort metadata
-      cohortMetadata <- loadCohortMetadata(executionSettings, verbose = FALSE)
+      # Load cohort manifest using new API
+      cohortManifest <- loadCohortManifest(cohortsFolderPath = cohortsFolderPath, verbose = FALSE)
       
-      # Extract id, label, and tags columns
-      cohortKey <- cohortMetadata |>
-        dplyr::select(cohortId, cohortLabel, cohortTags) |>
-        dplyr::distinct()
+      # Extract id, label, and tags columns from manifest
+      cohortKey <- cohortManifest$getManifest() |>
+        dplyr::select(id, label, tags) |>
+        dplyr::distinct() |>
+        dplyr::rename(cohortId = id, cohortLabel = label, cohortTags = tags)
       
       # Save cohortKey to export folder
       cohortKeyPath <- fs::path(versionExportPath, "cohortKey.csv")
@@ -550,6 +701,86 @@ mergePipelineResults <- function(pipelineVersion, dbIds, resultsPath = here::her
       cli::cli_alert_danger("Error creating cohort key: {e$message}")
     })
   }
+  
+  # QC Section 1: Validate cohort completeness
+  cli::cli_text("")
+  cli::cli_h2("QC: Cohort Completeness Validation")
+  tryCatch({
+    cohortValidation <- validateCohortResults(
+      exportPath = versionExportPath,
+      resultsFileName = NULL
+    )
+    
+    qcValidationPath <- fs::path(versionExportPath, "qc_cohortValidation.csv")
+    readr::write_csv(cohortValidation, qcValidationPath)
+    cli::cli_alert_success("Cohort validation saved to {fs::path_rel(qcValidationPath)}")
+    
+    # Determine QC status based on validation results
+    hasWarnings <- any(cohortValidation$validationStatus %in% c("ZeroCount", "Missing"))
+  }, error = function(e) {
+    cli::cli_alert_warning("Cohort validation skipped: {e$message}")
+    hasWarnings <<- NA
+  })
+  
+  # QC Section 2: Generate execution metadata
+  cli::cli_text("")
+  cli::cli_h2("QC: Execution Metadata")
+  tryCatch({
+    # Determine QC status
+    if (is.na(hasWarnings)) {
+      qcStatus <- "Completed"
+    } else if (hasWarnings) {
+      qcStatus <- "HasWarnings"
+    } else {
+      qcStatus <- "OK"
+    }
+    
+    # Build databases string
+    databasesUsed <- paste(databaseLabels, collapse = " | ")
+    
+    # Create metadata record
+    processMeta <- data.frame(
+      executionTimestamp = as.character(Sys.time()),
+      pipelineVersion = pipelineVersion,
+      codeCommitSha = codeCommitSha,
+      lockfileHash = lockfileHash,
+      databasesIncluded = databasesUsed,
+      databaseCount = length(dbIds),
+      tasksProcessed = nrow(mergeSummary),
+      totalFilesExported = sum(mergeSummary$fileCount),
+      totalRowsMerged = sum(mergeSummary$totalRows),
+      qcStatus = qcStatus,
+      stringsAsFactors = FALSE
+    )
+    
+    # Save process metadata
+    processMetaPath <- fs::path(versionExportPath, "qc_processMeta.csv")
+    readr::write_csv(processMeta, processMetaPath)
+    cli::cli_alert_success("Process metadata saved to {fs::path_rel(processMetaPath)}")
+    
+    # Print execution summary
+    cli::cli_bullets(c(
+      "v" = "Timestamp: {processMeta$executionTimestamp}",
+      "v" = "Pipeline: v{pipelineVersion}",
+      "v" = "Databases: {processMeta$databaseCount} ({databasesUsed})",
+      "v" = "Tasks: {processMeta$tasksProcessed}",
+      "v" = "Files: {processMeta$totalFilesExported}",
+      "v" = "Rows: {processMeta$totalRowsMerged}",
+      if (qcStatus != "OK") c("!" = "QC Status: {qcStatus}") else c("v" = "QC Status: {qcStatus}")
+    ))
+  }, error = function(e) {
+    cli::cli_alert_danger("Error generating process metadata: {e$message}")
+  })
+  
+  # Final completion message
+  cli::cli_text("")
+  cli::cli_alert_success("Pipeline export complete!")
+  cli::cli_bullets(c(
+    "i" = "Export location: {fs::path_rel(versionExportPath)}",
+    "i" = "Reference files: cohortKey.csv, databaseInfo.csv",
+    "i" = "Schema review: schema_review.csv",
+    "i" = "QC reports: qc_cohortValidation.csv, qc_processMeta.csv"
+  ))
   
   # Convert to tibble and return invisibly
   mergeSummary <- tibble::as_tibble(mergeSummary)

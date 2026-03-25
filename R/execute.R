@@ -501,6 +501,13 @@ execStudyPipeline <- function(configBlock, updateType, env = rlang::caller_env()
   
   cli::cli_rule("Execute Study Pipeline")
   
+  # Validate code state before proceeding
+  codeCommitSha <- validateCodeState()
+  
+  # Validate environment and snapshot dependencies
+  validateEnvironment()
+  lockfileHash <- snapshotEnvironment()
+  
   # Validate config.yml file structure
   tryCatch({
     validateConfigYaml()
