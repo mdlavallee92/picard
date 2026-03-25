@@ -25,25 +25,70 @@ The function automatically suggests appropriate vocabularies based on concept se
 \item \code{drug_exposure}: NDC
 \item \code{observation}: All vocabularies (ICD9CM, ICD10CM, HCPCS, CPT4, LOINC, NDC)
 \item \code{device_exposure}: NDC
+\item \code{visit_occurrence}: ICD10CM, ICD9CM, HCPCS, CPT4
 }
 
-Note: These are suggestions only. You can override with any valid vocabulary combination.
+Note: These suggestions are based on OMOP CDM conventions. You can override
+with any valid vocabulary combination.
 
-\strong{Workflow:}
+\strong{Processing Workflow:}
 \enumerate{
+\item Verifies ExecutionSettings is configured with database connection
 \item Detects domains of all concept sets in the manifest
 \item Displays suggested vocabularies based on detected domains
-\item Creates a single xlsx workbook
+\item Prompts user to accept or override suggested vocabularies
+\item Creates a new xlsx workbook
 \item For each concept set in the manifest:
 \itemize{
 \item Reads the CIRCE JSON definition
-\item Builds a concept query using CirceR
-\item Joins with concept_relationship via "Maps to" relationship
+\item Builds a concept query selecting standard concepts (using CirceR)
+\item Performs SQL join: concepts -> concept_relationship (Maps to) -> source concepts
 \item Finds matching source codes in the specified vocabularies
-\item Adds results to a new sheet in the xlsx workbook
+\item Adds results as a new sheet in the xlsx workbook with formatted header
+\item Provides status messages for each concept set
 }
-\item Exports all results to \verb{\{outputFolder\}/SourceCodeMap_\{vocabs\}.xlsx}
-\item Each sheet contains: vocabulary_id, concept_code, concept_name
+\item Exports combined results to \code{{outputFolder}/SourceCodeWorkbook.xlsx}
+\item Each sheet contains columns: vocabulary_id, concept_code, concept_name
+\item Sheet headers are styled with blue background and white bold text
+\item Column widths are auto-fitted for readability
+}
+
+\strong{SQL Query Pattern:}
+For each concept set, the following logic is executed:
+\itemize{
+\item CTE selects all standard concepts in the concept set
+\item Joins to concept_relationship table with relationship_id = 'Maps to'
+\item Maps relationship finds what source codes map TO standard concepts
+\item Filters to valid, non-invalid source codes in specified vocabularies
+\item Results ordered by vocabulary_id and concept_code
+}
+
+\strong{Requirements:}
+\itemize{
+\item ExecutionSettings must be initialized with a valid database connection
+\item Vocabulary schema must be accessible from ExecutionSettings
+\item openxlsx2 package must be installed
+\item User must have READ permissions on vocabulary tables
+}
+
+\strong{Error Handling:}
+\itemize{
+\item Displays warnings if any concept set processing fails but continues with others
+\item Provides clear error messages if database connection is unavailable
+\item Validates source vocabularies against known vocabulary IDs
+}
+
+This function identifies which standard concepts are included in each concept set
+by finding the reverse mapping relationship. For each concept set:
+\enumerate{
+\item Reads the CIRCE JSON definition
+\item Builds a concept query using CirceR
+\item Joins with concept_relationship via reverse "Maps to" relationship
+(finds what maps TO the concept set concepts)
+\item Filters for standard concepts (standard_concept = 'S')
+\item Adds results to a new sheet in the xlsx workbook
+\item Exports all results to \code{{outputFolder}/IncludedCodes.xlsx}
+\item Each sheet contains: concept_id, concept_name, vocabulary_id
 }
 
 \strong{Requirements:}
@@ -53,23 +98,6 @@ Note: These are suggestions only. You can override with any valid vocabulary com
 \item openxlsx2 package must be installed
 }
 }
-\examples{
-
-## ------------------------------------------------
-## Method `ConceptSetManifest$extractSourceCodes`
-## ------------------------------------------------
-
-\dontrun{
-  # Get source codes for all concept sets in single xlsx with multiple sheets
-  settings <- createExecutionSettings(...)
-  manifest <- loadConceptSetManifest(settings)
-  manifest$extractSourceCodes(
-    sourceVocabs = c("ICD10CM", "ICD9CM")
-  )
-  # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
-}
-
-}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{
@@ -77,6 +105,7 @@ Note: These are suggestions only. You can override with any valid vocabulary com
 \item \href{#method-ConceptSetManifest-getManifest}{\code{ConceptSetManifest$getManifest()}}
 \item \href{#method-ConceptSetManifest-getDbPath}{\code{ConceptSetManifest$getDbPath()}}
 \item \href{#method-ConceptSetManifest-getExecutionSettings}{\code{ConceptSetManifest$getExecutionSettings()}}
+\item \href{#method-ConceptSetManifest-setExecutionSettings}{\code{ConceptSetManifest$setExecutionSettings()}}
 \item \href{#method-ConceptSetManifest-getConceptSetById}{\code{ConceptSetManifest$getConceptSetById()}}
 \item \href{#method-ConceptSetManifest-getConceptSetsByTag}{\code{ConceptSetManifest$getConceptSetsByTag()}}
 \item \href{#method-ConceptSetManifest-getConceptSetsByLabel}{\code{ConceptSetManifest$getConceptSetsByLabel()}}
@@ -84,7 +113,13 @@ Note: These are suggestions only. You can override with any valid vocabulary com
 \item \href{#method-ConceptSetManifest-grabConceptSetById}{\code{ConceptSetManifest$grabConceptSetById()}}
 \item \href{#method-ConceptSetManifest-grabConceptSetsByTag}{\code{ConceptSetManifest$grabConceptSetsByTag()}}
 \item \href{#method-ConceptSetManifest-grabConceptSetsByLabel}{\code{ConceptSetManifest$grabConceptSetsByLabel()}}
+\item \href{#method-ConceptSetManifest-validateManifest}{\code{ConceptSetManifest$validateManifest()}}
+\item \href{#method-ConceptSetManifest-getManifestStatus}{\code{ConceptSetManifest$getManifestStatus()}}
+\item \href{#method-ConceptSetManifest-deleteConceptSet}{\code{ConceptSetManifest$deleteConceptSet()}}
+\item \href{#method-ConceptSetManifest-hardRemoveConceptSet}{\code{ConceptSetManifest$hardRemoveConceptSet()}}
+\item \href{#method-ConceptSetManifest-cleanupMissing}{\code{ConceptSetManifest$cleanupMissing()}}
 \item \href{#method-ConceptSetManifest-extractSourceCodes}{\code{ConceptSetManifest$extractSourceCodes()}}
+\item \href{#method-ConceptSetManifest-extractIncludedCodes}{\code{ConceptSetManifest$extractIncludedCodes()}}
 \item \href{#method-ConceptSetManifest-clone}{\code{ConceptSetManifest$clone()}}
 }
 }
@@ -107,7 +142,8 @@ Initialize a new ConceptSetManifest
 \item{\code{conceptSetEntries}}{List. A list of ConceptSetDef objects.}
 
 \item{\code{executionSettings}}{Object. (Optional) Execution settings for accessing the vocabulary database.
-Can be any object type containing configuration for vocabulary queries.}
+Can be any object type containing configuration for vocabulary queries. Defaults to NULL.
+Only required for operations like extractSourceCodes().}
 
 \item{\code{dbPath}}{Character. Path to the SQLite database. Defaults to
 "inputs/conceptSets/conceptSetManifest.sqlite"
@@ -152,6 +188,26 @@ Get the execution settings
 
 \subsection{Returns}{
 Object. The execution settings object for vocabulary access, or NULL if not set.
+Set or update execution settings
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-setExecutionSettings"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-setExecutionSettings}{}}}
+\subsection{Method \code{setExecutionSettings()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$setExecutionSettings(executionSettings)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{executionSettings}}{ExecutionSettings object for database access.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns self for method chaining.
 Get a specific concept set by ID
 }
 }
@@ -297,17 +353,106 @@ Defaults to "exact".}
 }
 \subsection{Returns}{
 List. A list of ConceptSetDef objects with matching labels, or NULL if none found.
-Extract Source Codes for Concept Sets
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-validateManifest"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-validateManifest}{}}}
+\subsection{Method \code{validateManifest()}}{
+Validate manifest and return status of all concept sets
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$validateManifest()}\if{html}{\out{</div>}}
+}
 
-Finds source codes that map to each concept set's standard concepts
-based on a defined source vocabulary. Results are exported to a single
-xlsx file with one sheet per concept set, saved in the inputs/conceptSets folder.
+\subsection{Returns}{
+A tibble with columns: id, label, status (active/missing/deleted), deleted_at, file_exists
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-getManifestStatus"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-getManifestStatus}{}}}
+\subsection{Method \code{getManifestStatus()}}{
+Get summary status of manifest
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$getManifestStatus()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+List with elements: active_count, missing_count, deleted_count, next_available_id
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-deleteConceptSet"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-deleteConceptSet}{}}}
+\subsection{Method \code{deleteConceptSet()}}{
+Soft delete a concept set (mark as deleted, preserve record)
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$deleteConceptSet(id, reason = NULL)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{id}}{Integer. The concept set ID to delete.}
+
+\item{\code{reason}}{Character. Optional reason for deletion.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns TRUE if successful, FALSE otherwise.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-hardRemoveConceptSet"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-hardRemoveConceptSet}{}}}
+\subsection{Method \code{hardRemoveConceptSet()}}{
+Hard delete a concept set (removes the record from database, irreversible)
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$hardRemoveConceptSet(id)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{id}}{Integer. The concept set ID to permanently remove.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns TRUE if successful, FALSE otherwise.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-cleanupMissing"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-cleanupMissing}{}}}
+\subsection{Method \code{cleanupMissing()}}{
+Clean up missing concept sets from manifest
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$cleanupMissing(keep_trace = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{keep_trace}}{Logical. If TRUE, marks missing as deleted with timestamp (soft delete).
+If FALSE, permanently removes from database (hard delete). Defaults to TRUE.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns NULL. Displays summary of cleanup actions.
+Extract Source Codes for Concept Sets
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ConceptSetManifest-extractSourceCodes"></a>}}
 \if{latex}{\out{\hypertarget{method-ConceptSetManifest-extractSourceCodes}{}}}
 \subsection{Method \code{extractSourceCodes()}}{
+Finds source codes from specified vocabularies that map to each concept set's
+standard concepts. Results are exported to a single xlsx file with one sheet
+per concept set, saved in the inputs/conceptSets folder. The function provides
+interactive vocabulary suggestions based on detected concept set domains.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$extractSourceCodes(
   sourceVocabs = c("ICD10CM"),
@@ -320,8 +465,39 @@ xlsx file with one sheet per concept set, saved in the inputs/conceptSets folder
 \describe{
 \item{\code{sourceVocabs}}{Character vector. Source vocabulary IDs to search for.
 Valid options: "ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC".
-Defaults to c("ICD10CM").}
+Defaults to c("ICD10CM"). The function will suggest appropriate vocabularies
+based on the domains of your concept sets and prompt you to use them.}
 
+\item{\code{outputFolder}}{Character. Path where the xlsx file will be saved.
+Defaults to "inputs/conceptSets".}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns NULL. Saves xlsx file to outputFolder and prints
+status messages via cli package. Output file is ready to open in Excel or
+other spreadsheet software.
+
+Extract Included Standard Concepts for Concept Sets
+
+Finds standard concepts that are included in (map TO) each concept set's included concepts.
+Results are exported to a single xlsx file with one sheet per concept set,
+saved in the inputs/conceptSets folder.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConceptSetManifest-extractIncludedCodes"></a>}}
+\if{latex}{\out{\hypertarget{method-ConceptSetManifest-extractIncludedCodes}{}}}
+\subsection{Method \code{extractIncludedCodes()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConceptSetManifest$extractIncludedCodes(
+  outputFolder = here::here("inputs/conceptSets")
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
 \item{\code{outputFolder}}{Character. Path where the xlsx file will be saved.
 Defaults to "inputs/conceptSets".}
 }
@@ -330,23 +506,6 @@ Defaults to "inputs/conceptSets".}
 \subsection{Returns}{
 Invisibly returns NULL. Saves xlsx file to outputFolder and prints status messages.
 }
-\subsection{Examples}{
-\if{html}{\out{<div class="r example copy">}}
-\preformatted{\dontrun{
-  # Get source codes for all concept sets in single xlsx with multiple sheets
-  settings <- createExecutionSettings(...)
-  manifest <- loadConceptSetManifest(settings)
-  manifest$extractSourceCodes(
-    sourceVocabs = c("ICD10CM", "ICD9CM")
-  )
-  # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
-}
-
-}
-\if{html}{\out{</div>}}
-
-}
-
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-ConceptSetManifest-clone"></a>}}

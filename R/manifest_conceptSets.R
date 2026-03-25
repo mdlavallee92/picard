@@ -3,12 +3,14 @@
 #'
 #' Loads or creates a concept set manifest from CIRCE JSON files located in the
 #' inputs/conceptSets/json folder. The manifest is stored in an SQLite database
-#' for efficient querying and metadata persistence.
+#' for efficient querying and metadata persistence. ExecutionSettings are optional
+#' and only required if you plan to extract source codes or access vocabularies.
 #'
-#' @param executionSettings ExecutionSettings object. Optional. Used for vocabulary access
-#'   when working with concept sets.
 #' @param conceptSetsFolderPath Character. Path to the conceptSets folder containing the manifest
 #'   database. Defaults to "inputs/conceptSets".
+#' @param executionSettings ExecutionSettings object. Optional. Defaults to NULL. 
+#'   Only required for operations like extractSourceCodes(). You can add settings later 
+#'   using setExecutionSettings() on the returned ConceptSetManifest object.
 #'
 #' @return ConceptSetManifest object containing all loaded concept sets with metadata.
 #'
@@ -39,20 +41,22 @@
 #'
 #' @examples
 #' \dontrun{
-#'   # Load concept set manifest
+#'   # Load concept set manifest (no settings required for metadata review)
+#'   manifest <- loadConceptSetManifest()
+#'   
+#'   # Or load from custom path
+#'   manifest <- loadConceptSetManifest(conceptSetsFolderPath = "path/to/conceptsets")
+#'   
+#'   # Add execution settings later if needed for source code extraction
 #'   settings <- createExecutionSettings(
 #'     connectionString = "Server=localhost;Database=mydb"
 #'   )
-#'   manifest <- loadConceptSetManifest(settings)
-#'
-#'   # Query the manifest
-#'   cs1 <- manifest$getConceptSetById(1)
-#'   cs_by_tag <- manifest$getConceptSetsByTag("domain", "drug_exposure")
+#'   manifest$setExecutionSettings(settings)
+#'   manifest$extractSourceCodes(sourceVocabs = c("ICD10CM"))
 #' }
 #'
-#'
-loadConceptSetManifest <- function(executionSettings = NULL,
-                                   conceptSetsFolderPath = here::here("inputs/conceptSets")) {
+loadConceptSetManifest <- function(conceptSetsFolderPath = here::here("inputs/conceptSets"),
+                                   executionSettings = NULL) {
   checkmate::assert_class(executionSettings, "ExecutionSettings", null.ok = TRUE)
   dbPath <- fs::path(conceptSetsFolderPath, "conceptSetManifest.sqlite")
   concept_set_entries <- list()
@@ -79,10 +83,13 @@ loadConceptSetManifest <- function(executionSettings = NULL,
         file_path <- record$filePath
         stored_hash <- record$hash
         tags_string <- record$tags
+        concept_set_id <- record$id
 
         # Check if file still exists
         if (!file.exists(file_path)) {
-          cli::cli_alert_danger("Concept set file not found: {record$label} ({file_path})")
+          cli::cli_alert_warning("Concept set file missing (will be marked): {record$label} ({file_path})")
+          # Don't skip - we'll track this in the database with status='missing'
+          # For now, skip it from loading into memory but it will be in the database
           next
         }
 
@@ -92,6 +99,9 @@ loadConceptSetManifest <- function(executionSettings = NULL,
             label = label,
             filePath = file_path
         )
+
+          # Set the ID from the database to preserve it
+          concept_set_def$setId(as.integer(concept_set_id))
 
           # Backfill tags from database
           if (!is.na(tags_string) && tags_string != "") {
@@ -226,6 +236,27 @@ loadConceptSetManifest <- function(executionSettings = NULL,
     dbPath = dbPath
   )
 
+  # Detect and alert about missing concept sets
+  missing_conceptsets <- manifest$private$.detect_missing_conceptsets()
+  
+  if (!is.null(missing_conceptsets) && length(missing_conceptsets) > 0) {
+    cli::cli_rule("Missing Concept Set Files Detected")
+    cli::cli_alert_warning("{length(missing_conceptsets)} concept set file(s) are missing:")
+    
+    for (cs_info in missing_conceptsets) {
+      cli::cli_bullets(c(
+        "✗" = "ID {cs_info$id}: {cs_info$label} ({cs_info$filePath})"
+      ))
+    }
+    
+    cli::cli_rule()
+    cli::cli_bullets(c(
+      i = "Use {.code manifest$validateManifest()} to see full status",
+      i = "Use {.code manifest$cleanupMissing()} to remove missing concept sets",
+      i = "Or restore the missing files and reload"
+    ))
+  }
+
   return(manifest)
 }
 
@@ -256,9 +287,8 @@ loadConceptSetManifest <- function(executionSettings = NULL,
 #'   # Reset the manifest
 #'   resetConceptSetManifest()
 #'
-#'   # Rebuild it from concept set files
-#'   settings <- ExecutionSettings$new(...)
-#'   manifest <- loadConceptSetManifest(settings)
+#'   # Rebuild it (with or without settings)
+#'   manifest <- loadConceptSetManifest()
 #' }
 #'
 resetConceptSetManifest <- function(conceptSetsFolderPath = here::here("inputs/conceptSets")) {
@@ -275,6 +305,115 @@ resetConceptSetManifest <- function(conceptSetsFolderPath = here::here("inputs/c
   invisible(NULL)
 }
 
+
+
+
+#' Create Blank Concept Sets Load File
+#'
+#' Creates a blank conceptSetsLoad.csv template file in the specified folder
+#' with proper column structure. Users can fill this file manually in Excel,
+#' Google Sheets, or any text editor, then place it in the inputs/conceptSets folder.
+#'
+#' @param conceptSetsFolderPath Character. Path where the blank file will be created.
+#'   Defaults to "inputs/conceptSets". Creates the folder if it doesn't exist.
+#'
+#' @return Invisibly returns the file path. Prints informative messages with tips.
+#'
+#' @details
+#' **Column Guide:**
+#' - `atlasId` (numeric): The ATLAS concept set ID. Get this from ATLAS > Concept Sets
+#' - `label` (character): Display name for your concept set (e.g., "Hypertension diagnoses")
+#' - `category` (character): Broad grouping category (e.g., "Cardiovascular", "Medications")
+#' - `subCategory` (character): Optional sub-grouping within category
+#' - `sourceCode` (TRUE/FALSE): Whether this represents source codes (rarely TRUE for concept sets)
+#' - `domain` (character): OMOP domain - must be one of:
+#'   - `drug_exposure` - medication concept sets
+#'   - `condition_occurrence` - diagnosis concept sets
+#'   - `measurement` - lab/measurement concept sets
+#'   - `procedure` - procedure concept sets
+#'   - `observation` - observation concept sets
+#'   - `visit_occurrence` - visit type concept sets
+#' - `file_name` (character): Path to JSON file (e.g., "json/hypertension.json"). Note this is a placeholder will be replaced when you import from ATLAS.
+#'
+#' **Tips for Filling Out:**
+#' 1. Each row represents one concept set
+#' 2. Use forward slashes (/) in file paths
+#' 3. Ensure file_name matches the JSON files you'll import from ATLAS
+#' 4. domain field is critical for vocabulary suggestions in extractSourceCodes()
+#' 6. Save as UTF-8 CSV when exporting from Excel to avoid encoding issues
+#'
+#' **Workflow:**
+#' 1. Call this function to create blank template
+#' 2. Open conceptSetsLoad.csv in your preferred spreadsheet application
+#' 3. Fill in your concept set metadata
+#' 4. Save the file
+#' 5. Use [importAtlasConceptSets()] to import the actual JSON definitions from ATLAS
+#' 6. Use [loadConceptSetManifest()] to load into your study
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'   # Create blank template in default location
+#'   createBlankConceptSetsLoadFile()
+#'   # File created at: inputs/conceptSets/conceptSetsLoad.csv
+#' }
+#'
+createBlankConceptSetsLoadFile <- function(conceptSetsFolderPath = here::here("inputs/conceptSets")) {
+  checkmate::assert_string(conceptSetsFolderPath)
+  
+  # Create directory if it doesn't exist
+  fs::dir_create(conceptSetsFolderPath)
+  
+  # Create blank template with proper structure
+  template <- data.frame(
+    atlasId = integer(1),
+    label = character(1),
+    category = character(1),
+    subCategory = character(1),
+    sourceCode = character(1),
+    domain = character(1),
+    file_name = character(1),
+    stringsAsFactors = FALSE
+  )
+  
+  file_path <- fs::path(conceptSetsFolderPath, "conceptSetsLoad.csv")
+  readr::write_csv(template, file = file_path)
+  
+  # Print informative messages
+  cli::cli_rule("Blank Concept Sets Load File Created")
+  cli::cli_text("File created at: {.file {fs::path_rel(file_path)}}")
+  cli::cli_br()
+  cli::cli_h3("Column Guide:")
+  cli::cli_ul(c(
+    "{.field atlasId} - ATLAS concept set ID (numeric)",
+    "{.field label} - Display name (e.g., 'Hypertension diagnoses')",
+    "{.field category} - Broad category (e.g., 'Cardiovascular')",
+    "{.field subCategory} - Optional sub-grouping",
+    "{.field sourceCode} - TRUE/FALSE (usually FALSE for concept sets)",
+    "{.field domain} - One of: drug_exposure, condition_occurrence, measurement, procedure, observation, visit_occurrence",
+    "{.field file_name} - Path to JSON file (e.g., 'json/hypertension.json'). Note this is a placeholder will be replaced when you import from ATLAS."
+  ))
+  cli::cli_br()
+  cli::cli_h3("Tips for Filling Out:")
+  cli::cli_ul(c(
+    "Each row = one concept set",
+    "Use forward slashes (/) in file paths",
+    "{.emph domain} field is critical for vocabulary suggestions",
+    "Save as UTF-8 CSV from Excel to avoid encoding issues"
+  ))
+  cli::cli_br()
+  cli::cli_h3("Next Steps:")
+  cli::cli_ol(c(
+    "Open {.file conceptSetsLoad.csv} in Excel or your text editor",
+    "Fill in your concept set metadata",
+    "Save the file",
+    "Use {.code importAtlasConceptSets()} to import JSON definitions from ATLAS",
+    "Use {.code loadConceptSetManifest()} to load into your study"
+  ))
+  
+  invisible(file_path)
+}
 
 #' Launch Interactive Concept Set Load Editor
 #'
@@ -363,6 +502,9 @@ launchConceptSetsLoadEditor <- function(conceptSetsFolderPath = here::here("inpu
             shiny::hr(),
             shiny::h4("Actions"),
             shiny::actionButton("delete_rows", "Delete Selected Rows", class = "btn-danger"),
+            shiny::hr(),
+            shiny::h4("Templates"),
+            shiny::downloadButton("download_template", "Download Blank Template", class = "btn-info"),
             shiny::hr(),
             shiny::actionButton("save_file", "Save Concept Set Load File", class = "btn-success"),
             shiny::actionButton("cancel", "Cancel", class = "btn-secondary")
@@ -500,6 +642,26 @@ launchConceptSetsLoadEditor <- function(conceptSetsFolderPath = here::here("inpu
           duration = 3
         )
       })
+
+      # Download blank template
+      output$download_template <- shiny::downloadHandler(
+        filename = function() {
+          paste0("conceptSetsLoad_template_", format(Sys.Date(), "%Y%m%d"), ".csv")
+        },
+        content = function(file) {
+          template <- data.frame(
+            atlasId = integer(1),
+            label = character(1),
+            category = character(1),
+            subCategory = character(1),
+            sourceCode = character(1),
+            domain = character(1),
+            file_name = character(1),
+            stringsAsFactors = FALSE
+          )
+          readr::write_csv(template, file = file)
+        }
+      )
 
       # Cancel
       shiny::observeEvent(input$cancel, {

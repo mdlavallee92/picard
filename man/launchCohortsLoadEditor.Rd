@@ -53,5 +53,4 @@ without manually editing the CSV file.
   # Launch the editor app
   launchCohortsLoadEditor()
 }
-
 }

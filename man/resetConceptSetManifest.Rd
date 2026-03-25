@@ -35,9 +35,8 @@ the available concept set files in the json/ subdirectory.
   # Reset the manifest
   resetConceptSetManifest()
 
-  # Rebuild it from concept set files
-  settings <- ExecutionSettings$new(...)
-  manifest <- loadConceptSetManifest(settings)
+  # Rebuild it (with or without settings)
+  manifest <- loadConceptSetManifest()
 }
 
 }

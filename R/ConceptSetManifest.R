@@ -206,9 +206,15 @@ ConceptSetManifest <- R6::R6Class(
             tags TEXT,
             filePath TEXT NOT NULL,
             hash TEXT NOT NULL,
-            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'active',
+            deleted_at DATETIME DEFAULT NULL
           )"
         )
+        
+        # Run schema migration to add status and deleted_at columns if they don't exist
+        private$migrate_schema(conn)
+        
         DBI::dbDisconnect(conn)
       } else {
         cli::cat_bullet(
@@ -335,6 +341,72 @@ ConceptSetManifest <- R6::R6Class(
       } else {
         return(NULL)
       }
+    },
+
+    # Schema migration: add status and deleted_at columns if they don't exist
+    migrate_schema = function(conn) {
+      # Check if status column exists
+      schema_info <- DBI::dbGetQuery(conn, "PRAGMA table_info(concept_set_manifest)")
+      col_names <- schema_info$name
+      
+      if (!("status" %in% col_names)) {
+        tryCatch({
+          DBI::dbExecute(conn, "ALTER TABLE concept_set_manifest ADD COLUMN status TEXT DEFAULT 'active'")
+          cli::cli_alert_success("Schema migration: Added 'status' column")
+        }, error = function(e) {
+          cli::cli_alert_warning("Schema migration for status column failed: {e$message}")
+        })
+      }
+      
+      if (!("deleted_at" %in% col_names)) {
+        tryCatch({
+          DBI::dbExecute(conn, "ALTER TABLE concept_set_manifest ADD COLUMN deleted_at DATETIME DEFAULT NULL")
+          cli::cli_alert_success("Schema migration: Added 'deleted_at' column")
+        }, error = function(e) {
+          cli::cli_alert_warning("Schema migration for deleted_at column failed: {e$message}")
+        })
+      }
+    },
+
+    # Detect missing concept set files and update status in database
+    detect_missing_conceptsets = function() {
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Get all active concept sets from database
+      db_records <- tryCatch({
+        DBI::dbGetQuery(
+          conn,
+          "SELECT id, label, filePath, status FROM concept_set_manifest WHERE status = 'active'"
+        )
+      }, error = function(e) {
+        return(data.frame())
+      })
+      
+      if (nrow(db_records) == 0) {
+        return(NULL)
+      }
+      
+      missing_conceptsets <- list()
+      
+      for (i in seq_len(nrow(db_records))) {
+        record <- db_records[i, ]
+        if (!file.exists(record$filePath)) {
+          missing_conceptsets[[length(missing_conceptsets) + 1]] <- record
+        }
+      }
+      
+      return(missing_conceptsets)
+    },
+
+    # Validate that execution settings have been set
+    validateExecutionSettings = function() {
+      if (is.null(private$.executionSettings)) {
+        stop(
+          "This operation requires ExecutionSettings. ",
+          "Use setExecutionSettings() to add database configuration before proceeding."
+        )
+      }
     }
   ),
 
@@ -343,7 +415,8 @@ ConceptSetManifest <- R6::R6Class(
     #'
     #' @param conceptSetEntries List. A list of ConceptSetDef objects.
     #' @param executionSettings Object. (Optional) Execution settings for accessing the vocabulary database.
-    #'   Can be any object type containing configuration for vocabulary queries.
+    #'   Can be any object type containing configuration for vocabulary queries. Defaults to NULL.
+    #'   Only required for operations like extractSourceCodes().
     #' @param dbPath Character. Path to the SQLite database. Defaults to
     #'   "inputs/conceptSets/conceptSetManifest.sqlite"
     initialize = function(conceptSetEntries, executionSettings = NULL, dbPath = "inputs/conceptSets/conceptSetManifest.sqlite") {
@@ -359,16 +432,38 @@ ConceptSetManifest <- R6::R6Class(
         stop("All elements in conceptSetEntries must be ConceptSetDef objects")
       }
 
-      # Assign IDs to each concept set entry
-      for (i in seq_along(conceptSetEntries)) {
-        conceptSetEntries[[i]]$setId(as.integer(i))
-      }
-
       private$.manifest <- conceptSetEntries
       private$.dbPath <- dbPath
 
       checkmate::assert_class(x = executionSettings, classes = "ExecutionSettings", null.ok = TRUE)
       private$.executionSettings <- executionSettings
+
+      # Assign IDs to each concept set entry
+      # Strategy: Preserve existing IDs (from database), assign new IDs to entries without them
+      conn <- DBI::dbConnect(RSQLite::SQLite(), dbPath)
+      on.exit(DBI::dbDisconnect(conn), add = TRUE)
+      
+      # Get the maximum ID ever assigned (including deleted concept sets)
+      max_id_result <- tryCatch({
+        DBI::dbGetQuery(conn, "SELECT MAX(id) as max_id FROM concept_set_manifest")
+      }, error = function(e) {
+        data.frame(max_id = NA)
+      })
+      
+      max_id <- if (!is.na(max_id_result$max_id[1])) max_id_result$max_id[1] else 0
+      next_id <- as.integer(max_id + 1)
+      
+      # Assign IDs: preserve existing ones, assign new ones
+      for (i in seq_along(conceptSetEntries)) {
+        current_id <- conceptSetEntries[[i]]$getId()
+        
+        if (is.na(current_id)) {
+          # No ID set yet, assign the next available ID
+          conceptSetEntries[[i]]$setId(next_id)
+          next_id <- next_id + 1L
+        }
+        # else: ID already set (loaded from database), keep it
+      }
 
       # Initialize and populate manifest
       private$init_manifest(dbPath)
@@ -399,6 +494,16 @@ ConceptSetManifest <- R6::R6Class(
     #' @return Object. The execution settings object for vocabulary access, or NULL if not set.
     getExecutionSettings = function() {
       private$.executionSettings
+    },
+
+    #' Set or update execution settings
+    #'
+    #' @param executionSettings ExecutionSettings object for database access.
+    #'
+    #' @return Invisibly returns self for method chaining.
+    setExecutionSettings = function(executionSettings) {
+      private$.executionSettings <- executionSettings
+      invisible(self)
     },
 
     #' Get a specific concept set by ID
@@ -700,15 +805,215 @@ ConceptSetManifest <- R6::R6Class(
       return(matching_concept_sets)
     },
 
+
+
+    #' @description Validate manifest and return status of all concept sets
+    #'
+    #' @return A tibble with columns: id, label, status (active/missing/deleted), deleted_at, file_exists
+    validateManifest = function() {
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Get all concept sets from database (including deleted ones)
+      db_records <- tryCatch({
+        DBI::dbGetQuery(
+          conn,
+          "SELECT id, label, filePath, status, deleted_at FROM concept_set_manifest ORDER BY id"
+        )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to query manifest: {e$message}")
+        return(data.frame())
+      })
+      
+      if (nrow(db_records) == 0) {
+        return(tibble::tibble(id = integer(), label = character(), status = character(), 
+                              deleted_at = character(), file_exists = logical()))
+      }
+      
+      # Add file_exists column
+      db_records$file_exists <- sapply(db_records$filePath, file.exists)
+      
+      # Convert to tibble and select columns
+      result <- tibble::tibble(
+        id = db_records$id,
+        label = db_records$label,
+        status = db_records$status,
+        deleted_at = db_records$deleted_at,
+        file_exists = db_records$file_exists
+      )
+      
+      return(result)
+    },
+
+    #' @description Get summary status of manifest
+    #'
+    #' @return List with elements: active_count, missing_count, deleted_count, next_available_id
+    getManifestStatus = function() {
+      status_df <- self$validateManifest()
+      
+      if (nrow(status_df) == 0) {
+        return(list(
+          active_count = 0L,
+          missing_count = 0L,
+          deleted_count = 0L,
+          next_available_id = 1L
+        ))
+      }
+      
+      active_count <- sum(status_df$status == "active", na.rm = TRUE)
+      missing_count <- sum(status_df$status == "active" & !status_df$file_exists, na.rm = TRUE)
+      deleted_count <- sum(status_df$status == "deleted", na.rm = TRUE)
+      next_id <- max(status_df$id, na.rm = TRUE) + 1L
+      
+      return(list(
+        active_count = active_count,
+        missing_count = missing_count,
+        deleted_count = deleted_count,
+        next_available_id = next_id
+      ))
+    },
+
+    #' @description Soft delete a concept set (mark as deleted, preserve record)
+    #'
+    #' @param id Integer. The concept set ID to delete.
+    #' @param reason Character. Optional reason for deletion.
+    #'
+    #' @return Invisibly returns TRUE if successful, FALSE otherwise.
+    deleteConceptSet = function(id, reason = NULL) {
+      checkmate::assert_int(id)
+      
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Check if concept set exists
+      exists <- DBI::dbGetQuery(
+        conn,
+        "SELECT COUNT(*) as count FROM concept_set_manifest WHERE id = ?",
+        list(id)
+      )$count > 0
+      
+      if (!exists) {
+        cli::cli_alert_danger("Concept set with ID {id} not found in manifest")
+        return(invisible(FALSE))
+      }
+      
+      # Update status and set deleted_at timestamp
+      tryCatch({
+        DBI::dbExecute(
+          conn,
+          "UPDATE concept_set_manifest SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+          list(id)
+        )
+        
+        # Get label for display
+        label_result <- DBI::dbGetQuery(
+          conn,
+          "SELECT label FROM concept_set_manifest WHERE id = ?",
+          list(id)
+        )
+        label <- if (nrow(label_result) > 0) label_result$label[1] else "Unknown"
+        
+        reason_msg <- if (!is.null(reason)) glue::glue(" ({reason})") else ""
+        cli::cli_alert_success("Deleted concept set {id}: {label}{reason_msg}")
+        return(invisible(TRUE))
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to delete concept set {id}: {e$message}")
+        return(invisible(FALSE))
+      })
+    },
+
+    #' @description Hard delete a concept set (removes the record from database, irreversible)
+    #'
+    #' @param id Integer. The concept set ID to permanently remove.
+    #'
+    #' @return Invisibly returns TRUE if successful, FALSE otherwise.
+    hardRemoveConceptSet = function(id) {
+      checkmate::assert_int(id)
+      
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Check if concept set exists
+      cs_info <- DBI::dbGetQuery(
+        conn,
+        "SELECT label, status FROM concept_set_manifest WHERE id = ?",
+        list(id)
+      )
+      
+      if (nrow(cs_info) == 0) {
+        cli::cli_alert_danger("Concept set with ID {id} not found")
+        return(invisible(FALSE))
+      }
+      
+      label <- cs_info$label[1]
+      status <- cs_info$status[1]
+      
+      # Hard delete
+      tryCatch({
+        DBI::dbExecute(
+          conn,
+          "DELETE FROM concept_set_manifest WHERE id = ?",
+          list(id)
+        )
+        
+        cli::cli_alert_warning("Permanently removed concept set {id}: {label} (status was: {status})")
+        return(invisible(TRUE))
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to remove concept set {id}: {e$message}")
+        return(invisible(FALSE))
+      })
+    },
+
+    #' @description Clean up missing concept sets from manifest
+    #'
+    #' @param keep_trace Logical. If TRUE, marks missing as deleted with timestamp (soft delete).
+    #'   If FALSE, permanently removes from database (hard delete). Defaults to TRUE.
+    #'
+    #' @return Invisibly returns NULL. Displays summary of cleanup actions.
+    cleanupMissing = function(keep_trace = TRUE) {
+      status_df <- self$validateManifest()
+      
+      # Find missing active concept sets (file doesn't exist but status is active)
+      missing_mask <- status_df$status == "active" & !status_df$file_exists
+      missing_conceptsets <- status_df[missing_mask, ]
+      
+      if (nrow(missing_conceptsets) == 0) {
+        cli::cli_alert_success("No missing concept sets to clean up")
+        return(invisible(NULL))
+      }
+      
+      cli::cli_rule("Cleaning Up Missing Concept Sets")
+      cli::cli_alert_info("Found {nrow(missing_conceptsets)} missing concept set file(s)")
+      
+      for (i in seq_len(nrow(missing_conceptsets))) {
+        cs_id <- missing_conceptsets$id[i]
+        label <- missing_conceptsets$label[i]
+        
+        if (keep_trace) {
+          self$deleteConceptSet(cs_id, reason = "missing file")
+        } else {
+          self$hardRemoveConceptSet(cs_id)
+        }
+      }
+      
+      cleanup_method <- if (keep_trace) "soft deleted (with trace)" else "hard deleted (permanently)"
+      cli::cli_alert_success("Cleanup complete: {nrow(missing_conceptsets)} concept set(s) {cleanup_method}")
+      
+      return(invisible(NULL))
+    },
+
     #' Extract Source Codes for Concept Sets
     #'
-    #' Finds source codes that map to each concept set's standard concepts
-    #' based on a defined source vocabulary. Results are exported to a single
-    #' xlsx file with one sheet per concept set, saved in the inputs/conceptSets folder.
+    #' @description
+    #' Finds source codes from specified vocabularies that map to each concept set's 
+    #' standard concepts. Results are exported to a single xlsx file with one sheet 
+    #' per concept set, saved in the inputs/conceptSets folder. The function provides 
+    #' interactive vocabulary suggestions based on detected concept set domains.
     #'
     #' @param sourceVocabs Character vector. Source vocabulary IDs to search for.
     #'   Valid options: "ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC".
-    #'   Defaults to c("ICD10CM").
+    #'   Defaults to c("ICD10CM"). The function will suggest appropriate vocabularies
+    #'   based on the domains of your concept sets and prompt you to use them.
     #' @param outputFolder Character. Path where the xlsx file will be saved.
     #'   Defaults to "inputs/conceptSets".
     #'
@@ -721,48 +1026,56 @@ ConceptSetManifest <- R6::R6Class(
     #' - `drug_exposure`: NDC
     #' - `observation`: All vocabularies (ICD9CM, ICD10CM, HCPCS, CPT4, LOINC, NDC)
     #' - `device_exposure`: NDC
+    #' - `visit_occurrence`: ICD10CM, ICD9CM, HCPCS, CPT4
     #'
-    #' Note: These are suggestions only. You can override with any valid vocabulary combination.
+    #' Note: These suggestions are based on OMOP CDM conventions. You can override 
+    #' with any valid vocabulary combination.
     #'
-    #' **Workflow:**
-    #' 1. Detects domains of all concept sets in the manifest
-    #' 2. Displays suggested vocabularies based on detected domains
-    #' 3. Creates a single xlsx workbook
-    #' 4. For each concept set in the manifest:
+    #' **Processing Workflow:**
+    #' 1. Verifies ExecutionSettings is configured with database connection
+    #' 2. Detects domains of all concept sets in the manifest
+    #' 3. Displays suggested vocabularies based on detected domains
+    #' 4. Prompts user to accept or override suggested vocabularies
+    #' 5. Creates a new xlsx workbook
+    #' 6. For each concept set in the manifest:
     #'    - Reads the CIRCE JSON definition
-    #'    - Builds a concept query using CirceR
-    #'    - Joins with concept_relationship via "Maps to" relationship
+    #'    - Builds a concept query selecting standard concepts (using CirceR)
+    #'    - Performs SQL join: concepts -> concept_relationship (Maps to) -> source concepts
     #'    - Finds matching source codes in the specified vocabularies
-    #'    - Adds results to a new sheet in the xlsx workbook
-    #' 5. Exports all results to `{outputFolder}/SourceCodeMap_{vocabs}.xlsx`
-    #' 6. Each sheet contains: vocabulary_id, concept_code, concept_name
+    #'    - Adds results as a new sheet in the xlsx workbook with formatted header
+    #'    - Provides status messages for each concept set
+    #' 7. Exports combined results to `{outputFolder}/SourceCodeWorkbook.xlsx`
+    #' 8. Each sheet contains columns: vocabulary_id, concept_code, concept_name
+    #' 9. Sheet headers are styled with blue background and white bold text
+    #' 10. Column widths are auto-fitted for readability
+    #'
+    #' **SQL Query Pattern:**
+    #' For each concept set, the following logic is executed:
+    #' - CTE selects all standard concepts in the concept set
+    #' - Joins to concept_relationship table with relationship_id = 'Maps to'
+    #' - Maps relationship finds what source codes map TO standard concepts
+    #' - Filters to valid, non-invalid source codes in specified vocabularies
+    #' - Results ordered by vocabulary_id and concept_code
     #'
     #' **Requirements:**
-    #' - ExecutionSettings must be initialized with a valid connection
+    #' - ExecutionSettings must be initialized with a valid database connection
     #' - Vocabulary schema must be accessible from ExecutionSettings
     #' - openxlsx2 package must be installed
+    #' - User must have READ permissions on vocabulary tables
     #'
-    #' @return Invisibly returns NULL. Saves xlsx file to outputFolder and prints status messages.
+    #' **Error Handling:**
+    #' - Displays warnings if any concept set processing fails but continues with others
+    #' - Provides clear error messages if database connection is unavailable
+    #' - Validates source vocabularies against known vocabulary IDs
     #'
-    #' @export
-    #'
-    #' @examples
-    #' \dontrun{
-    #'   # Get source codes for all concept sets in single xlsx with multiple sheets
-    #'   settings <- createExecutionSettings(...)
-    #'   manifest <- loadConceptSetManifest(settings)
-    #'   manifest$extractSourceCodes(
-    #'     sourceVocabs = c("ICD10CM", "ICD9CM")
-    #'   )
-    #'   # Saves SourceCodeMap_ICD10CM_ICD9CM.xlsx to inputs/conceptSets
-    #' }
+    #' @return Invisibly returns NULL. Saves xlsx file to outputFolder and prints 
+    #'   status messages via cli package. Output file is ready to open in Excel or 
+    #'   other spreadsheet software.
     #'
     extractSourceCodes = function(sourceVocabs = c("ICD10CM"),
                                   outputFolder = here::here("inputs/conceptSets")) {
       # Validate executionSettings is available
-      if (is.null(private$.executionSettings)) {
-        stop("ExecutionSettings is required to extract source codes. Initialize manifest with valid ExecutionSettings.")
-      }
+      private$validateExecutionSettings()
 
       # Define valid source vocabularies
       valid_vocabs <- c("ICD9CM", "ICD10CM", "HCPCS", "CPT4", "LOINC", "NDC")
@@ -885,12 +1198,13 @@ ConceptSetManifest <- R6::R6Class(
           wb <- openxlsx2::wb_add_worksheet(wb, sheet = sheet_name)
           wb <- openxlsx2::wb_add_data(wb, sheet = sheet_name, x = source_codes)
 
-          # Format the header row
-          hs <- openxlsx2::create_style(fgFill = "#4472C4", fontColour = "white", textDecoration = "bold")
-          wb <- openxlsx2::wb_add_style(wb, sheet = sheet_name, style = hs, rows = 1, cols = 1:ncol(source_codes))
+          # Format the header row - blue background with white bold text
+          header_range <- paste0("A1:", openxlsx2::int2col(ncol(source_codes)), "1")
+          wb <- openxlsx2::wb_add_fill(wb, sheet = sheet_name, dims = header_range, color = openxlsx2::wb_color(hex = "FF4472C4"))
+          wb <- openxlsx2::wb_add_font(wb, sheet = sheet_name, dims = header_range, bold = TRUE, color = openxlsx2::wb_color(hex = "FFFFFFFF"))
 
           # Auto-fit columns
-          wb <- openxlsx2::set_col_widths(wb, sheet = sheet_name, widths = "auto", cols = 1:ncol(source_codes))
+          wb <- openxlsx2::wb_set_col_widths(wb, sheet = sheet_name, widths = "auto", cols = 1:ncol(source_codes))
 
           cli::cli_alert_success(
             "Added {nrow(source_codes)} source codes for {crayon::cyan(cs_label)}"
@@ -905,6 +1219,133 @@ ConceptSetManifest <- R6::R6Class(
       # Save the workbook
       openxlsx2::wb_save(wb, file = output_file, overwrite = TRUE)
       cli::cli_alert_success("Source codes extracted and saved to: {fs::path_rel(output_file)}")
+
+      invisible(NULL)
+    },
+
+    #' Extract Included Standard Concepts for Concept Sets
+    #'
+    #' Finds standard concepts that are included in (map TO) each concept set's included concepts.
+    #' Results are exported to a single xlsx file with one sheet per concept set,
+    #' saved in the inputs/conceptSets folder.
+    #'
+    #' @param outputFolder Character. Path where the xlsx file will be saved.
+    #'   Defaults to "inputs/conceptSets".
+    #'
+    #' @details
+    #' This function identifies which standard concepts are included in each concept set
+    #' by finding the reverse mapping relationship. For each concept set:
+    #'
+    #' 1. Reads the CIRCE JSON definition
+    #' 2. Builds a concept query using CirceR
+    #' 3. Joins with concept_relationship via reverse "Maps to" relationship
+    #'    (finds what maps TO the concept set concepts)
+    #' 4. Filters for standard concepts (standard_concept = 'S')
+    #' 5. Adds results to a new sheet in the xlsx workbook
+    #' 6. Exports all results to `{outputFolder}/IncludedCodes.xlsx`
+    #' 7. Each sheet contains: concept_id, concept_name, vocabulary_id
+    #'
+    #' **Requirements:**
+    #' - ExecutionSettings must be initialized with a valid connection
+    #' - Vocabulary schema must be accessible from ExecutionSettings
+    #' - openxlsx2 package must be installed
+    #'
+    #' @return Invisibly returns NULL. Saves xlsx file to outputFolder and prints status messages.
+    #'
+    extractIncludedCodes = function(outputFolder = here::here("inputs/conceptSets")) {
+      # Validate executionSettings is available
+      private$validateExecutionSettings()
+
+      # Check if openxlsx2 is available
+      if (!requireNamespace("openxlsx2", quietly = TRUE)) {
+        stop("openxlsx2 package is required for extractIncludedCodes. Install with: install.packages('openxlsx2')")
+      }
+
+      # Create output file path
+      output_file <- fs::path(outputFolder, "IncludedCodes.xlsx")
+
+      # Create workbook
+      wb <- openxlsx2::wb_workbook()
+
+      cli::cli_alert_info("Extracting included codes for {length(private$.manifest)} concept sets...")
+
+      # Get connection and vocabulary schema from ExecutionSettings
+      exec_settings <- private$.executionSettings
+      connection <- exec_settings$getConnection()
+      vocab_schema <- exec_settings$cdmDatabaseSchema
+
+      if (is.null(connection)) {
+        stop("No database connection available in ExecutionSettings")
+      }
+      on.exit(exec_settings$disconnect())
+
+      if (is.null(vocab_schema)) {
+        stop("No vocabulary database schema specified in ExecutionSettings")
+      }
+
+      # Process each concept set
+      for (i in seq_along(private$.manifest)) {
+        concept_set <- private$.manifest[[i]]
+
+        tryCatch({
+          cs_label <- concept_set$label
+          cs_json <- concept_set$getJson()
+          cs_file_path <- concept_set$getFilePath()
+
+          cli::cli_alert_info("[{i}/{length(private$.manifest)}] Processing: {crayon::magenta(cs_label)}")
+
+          # Build CIRCE concept set query
+          cs_sql <- CirceR::buildConceptSetQuery(cs_json)
+
+          # Wrap in CTE and find included standard concepts
+          full_sql <- glue::glue(
+            "WITH concepts AS ({cs_sql})\n",
+            "SELECT c.concept_id, c.concept_name, c.vocabulary_id\n",
+            "FROM concepts\n",
+            "JOIN @vocabulary_database_schema.concept_relationship cr\n",
+            "  ON cr.concept_id_2 = concepts.concept_id\n",
+            "  AND relationship_id = 'Maps to'\n",
+            "JOIN @vocabulary_database_schema.concept c\n",
+            "  ON c.concept_id = cr.concept_id_1\n",
+            "  AND c.standard_concept = 'S'\n",
+            "ORDER BY 1, 2;"
+          )
+
+          # Execute query
+          included_codes <- DatabaseConnector::renderTranslateQuerySql(
+            connection,
+            full_sql,
+            vocabulary_database_schema = vocab_schema
+          )
+
+          # Create a valid sheet name (max 31 characters, no special chars)
+          sheet_name <- substr(gsub("[^a-zA-Z0-9]", "_", cs_label), 1, 31)
+
+          # Add worksheet to workbook and add data
+          wb <- openxlsx2::wb_add_worksheet(wb, sheet = sheet_name)
+          wb <- openxlsx2::wb_add_data(wb, sheet = sheet_name, x = included_codes)
+
+          # Format the header row - green background with white bold text
+          header_range <- paste0("A1:", openxlsx2::int2col(ncol(included_codes)), "1")
+          wb <- openxlsx2::wb_add_fill(wb, sheet = sheet_name, dims = header_range, color = openxlsx2::wb_color(hex = "FF70AD47"))
+          wb <- openxlsx2::wb_add_font(wb, sheet = sheet_name, dims = header_range, bold = TRUE, color = openxlsx2::wb_color(hex = "FFFFFFFF"))
+
+          # Auto-fit columns
+          wb <- openxlsx2::wb_set_col_widths(wb, sheet = sheet_name, widths = "auto", cols = 1:ncol(included_codes))
+
+          cli::cli_alert_success(
+            "Added {nrow(included_codes)} included codes for {crayon::cyan(cs_label)}"
+          )
+        }, error = function(e) {
+          cli::cli_alert_danger(
+            "Error extracting included codes for {concept_set$label}: {e$message}"
+          )
+        })
+      }
+
+      # Save the workbook
+      openxlsx2::wb_save(wb, file = output_file, overwrite = TRUE)
+      cli::cli_alert_success("Included codes extracted and saved to: {fs::path_rel(output_file)}")
 
       invisible(NULL)
     }

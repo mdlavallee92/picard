@@ -5,16 +5,17 @@
 \title{Load Concept Set Manifest}
 \usage{
 loadConceptSetManifest(
-  executionSettings = NULL,
-  conceptSetsFolderPath = here::here("inputs/conceptSets")
+  conceptSetsFolderPath = here::here("inputs/conceptSets"),
+  executionSettings = NULL
 )
 }
 \arguments{
-\item{executionSettings}{ExecutionSettings object. Optional. Used for vocabulary access
-when working with concept sets.}
-
 \item{conceptSetsFolderPath}{Character. Path to the conceptSets folder containing the manifest
 database. Defaults to "inputs/conceptSets".}
+
+\item{executionSettings}{ExecutionSettings object. Optional. Defaults to NULL.
+Only required for operations like extractSourceCodes(). You can add settings later
+using setExecutionSettings() on the returned ConceptSetManifest object.}
 }
 \value{
 ConceptSetManifest object containing all loaded concept sets with metadata.
@@ -22,7 +23,8 @@ ConceptSetManifest object containing all loaded concept sets with metadata.
 \description{
 Loads or creates a concept set manifest from CIRCE JSON files located in the
 inputs/conceptSets/json folder. The manifest is stored in an SQLite database
-for efficient querying and metadata persistence.
+for efficient querying and metadata persistence. ExecutionSettings are optional
+and only required if you plan to extract source codes or access vocabularies.
 }
 \details{
 \strong{Workflow:}
@@ -55,16 +57,18 @@ After loading, use manifest methods to query concept sets:
 }
 \examples{
 \dontrun{
-  # Load concept set manifest
+  # Load concept set manifest (no settings required for metadata review)
+  manifest <- loadConceptSetManifest()
+  
+  # Or load from custom path
+  manifest <- loadConceptSetManifest(conceptSetsFolderPath = "path/to/conceptsets")
+  
+  # Add execution settings later if needed for source code extraction
   settings <- createExecutionSettings(
     connectionString = "Server=localhost;Database=mydb"
   )
-  manifest <- loadConceptSetManifest(settings)
-
-  # Query the manifest
-  cs1 <- manifest$getConceptSetById(1)
-  cs_by_tag <- manifest$getConceptSetsByTag("domain", "drug_exposure")
+  manifest$setExecutionSettings(settings)
+  manifest$extractSourceCodes(sourceVocabs = c("ICD10CM"))
 }
-
 
 }

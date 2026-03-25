@@ -354,6 +354,103 @@ resetCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts")
   invisible(NULL)
 }
 
+
+
+#' Create Blank Cohorts Load File
+#'
+#' Creates a blank cohortsLoad.csv template file in the specified folder
+#' with proper column structure. Users can fill this file manually in Excel,
+#' Google Sheets, or any text editor, then place it in the inputs/cohorts folder.
+#'
+#' @param cohortsFolderPath Character. Path where the blank file will be created.
+#'   Defaults to "inputs/cohorts". Creates the folder if it doesn't exist.
+#'
+#' @return Invisibly returns the file path. Prints informative messages with tips.
+#'
+#' @details
+#' **Column Guide:**
+#' - `atlasId` (numeric): The ATLAS cohort ID. Get this from ATLAS > Cohort Definitions
+#' - `label` (character): Display name for your cohort (e.g., "Type 2 Diabetes patients")
+#' - `category` (character): Broad grouping category (e.g., "Disease Populations", "Treatment Groups")
+#' - `subCategory` (character): Optional sub-grouping within category
+#' - `file_name` (character): Path to JSON file (e.g., "json/t2dm_patients.json"). Note this is a placeholder will be replaced when you import from ATLAS.
+#'
+#' **Tips for Filling Out:**
+#' 1. Each row represents one cohort
+#' 2. Use forward slashes (/) in file paths
+#' 3. Ensure file_name matches the JSON files you'll import from ATLAS
+#' 4. Logical sub-grouping in category/subCategory helps with organization
+#' 5. Save as UTF-8 CSV when exporting from Excel to avoid encoding issues
+#'
+#' **Workflow:**
+#' 1. Call this function to create blank template
+#' 2. Open cohortsLoad.csv in your preferred spreadsheet application
+#' 3. Fill in your cohort metadata
+#' 4. Save the file
+#' 5. Use [importAtlasCohorts()] to import the actual JSON definitions from ATLAS
+#' 6. Use [loadCohortManifest()] to load into your study
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'   # Create blank template in default location
+#'   createBlankCohortsLoadFile()
+#'   # File created at: inputs/cohorts/cohortsLoad.csv
+#' }
+#'
+createBlankCohortsLoadFile <- function(cohortsFolderPath = here::here("inputs/cohorts")) {
+  checkmate::assert_string(cohortsFolderPath)
+  
+  # Create directory if it doesn't exist
+  fs::dir_create(cohortsFolderPath)
+  
+  # Create blank template with proper structure
+  template <- data.frame(
+    atlasId = integer(1),
+    label = character(1),
+    category = character(1),
+    subCategory = character(1),
+    file_name = character(1),
+    stringsAsFactors = FALSE
+  )
+  
+  file_path <- fs::path(cohortsFolderPath, "cohortsLoad.csv")
+  readr::write_csv(template, file = file_path)
+  
+  # Print informative messages
+  cli::cli_rule("Blank Cohorts Load File Created")
+  cli::cli_text("File created at: {.file {fs::path_rel(file_path)}}")
+  cli::cli_br()
+  cli::cli_h3("Column Guide:")
+  cli::cli_ul(c(
+    "{.field atlasId} - ATLAS cohort ID (numeric)",
+    "{.field label} - Display name (e.g., 'Type 2 Diabetes patients')",
+    "{.field category} - Broad category (e.g., 'Disease Populations')",
+    "{.field subCategory} - Optional sub-grouping",
+    "{.field file_name} - Path to JSON file (e.g., 'json/t2dm_patients.json'). Note this is a placeholder will be replaced when you import from ATLAS."
+  ))
+  cli::cli_br()
+  cli::cli_h3("Tips for Filling Out:")
+  cli::cli_ul(c(
+    "Each row = one cohort",
+    "Use forward slashes (/) in file paths",
+    "Logical grouping helps with organization and querying",
+    "Save as UTF-8 CSV from Excel to avoid encoding issues"
+  ))
+  cli::cli_br()
+  cli::cli_h3("Next Steps:")
+  cli::cli_ol(c(
+    "Open {.file cohortsLoad.csv} in Excel or your text editor",
+    "Fill in your cohort metadata",
+    "Save the file",
+    "Use {.code importAtlasCohorts()} to import JSON definitions from ATLAS",
+    "Use {.code loadCohortManifest()} to load into your study"
+  ))
+  
+  invisible(file_path)
+}
+
 #' Launch Interactive Cohort Load File Editor
 #'
 #' Opens an interactive Shiny application for creating, viewing and editing the cohort
@@ -396,7 +493,6 @@ resetCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts")
 #'   # Launch the editor app
 #'   launchCohortsLoadEditor()
 #' }
-#'
 launchCohortsLoadEditor <- function(cohortsFolderPath = here::here("inputs/cohorts")) {
   # Check if Shiny is installed
   if (!requireNamespace("shiny", quietly = TRUE)) {
@@ -437,6 +533,9 @@ launchCohortsLoadEditor <- function(cohortsFolderPath = here::here("inputs/cohor
             shiny::hr(),
             shiny::h4("Actions"),
             shiny::actionButton("delete_rows", "Delete Selected Rows", class = "btn-danger"),
+            shiny::hr(),
+            shiny::h4("Templates"),
+            shiny::downloadButton("download_template", "Download Blank Template", class = "btn-info"),
             shiny::hr(),
             shiny::actionButton("save_file", "Save Cohort Load File", class = "btn-success"),
             shiny::actionButton("cancel", "Cancel", class = "btn-secondary")
@@ -563,6 +662,24 @@ launchCohortsLoadEditor <- function(cohortsFolderPath = here::here("inputs/cohor
           duration = 3
         )
       })
+
+      # Download blank template
+      output$download_template <- shiny::downloadHandler(
+        filename = function() {
+          paste0("cohortsLoad_template_", format(Sys.Date(), "%Y%m%d"), ".csv")
+        },
+        content = function(file) {
+          template <- data.frame(
+            atlasId = integer(1),
+            label = character(1),
+            category = character(1),
+            subCategory = character(1),
+            file_name = character(1),
+            stringsAsFactors = FALSE
+          )
+          readr::write_csv(template, file = file)
+        }
+      )
 
       # Cancel
       shiny::observeEvent(input$cancel, {
