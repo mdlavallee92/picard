@@ -59,6 +59,11 @@ Requires that executionSettings has been set and includes:
 \item \href{#method-CohortManifest-dropCohortTables}{\code{CohortManifest$dropCohortTables()}}
 \item \href{#method-CohortManifest-generateCohorts}{\code{CohortManifest$generateCohorts()}}
 \item \href{#method-CohortManifest-retrieveCohortCounts}{\code{CohortManifest$retrieveCohortCounts()}}
+\item \href{#method-CohortManifest-validateManifest}{\code{CohortManifest$validateManifest()}}
+\item \href{#method-CohortManifest-getManifestStatus}{\code{CohortManifest$getManifestStatus()}}
+\item \href{#method-CohortManifest-deleteCohort}{\code{CohortManifest$deleteCohort()}}
+\item \href{#method-CohortManifest-hardRemoveCohort}{\code{CohortManifest$hardRemoveCohort()}}
+\item \href{#method-CohortManifest-cleanupMissing}{\code{CohortManifest$cleanupMissing()}}
 \item \href{#method-CohortManifest-clone}{\code{CohortManifest$clone()}}
 }
 }
@@ -371,6 +376,95 @@ Data frame with columns:
 \item cohort_entries: Total number of cohort records
 \item cohort_subjects: Number of distinct subjects in the cohort
 }
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-validateManifest"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-validateManifest}{}}}
+\subsection{Method \code{validateManifest()}}{
+Validate manifest and return status of all cohorts
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$validateManifest()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+A tibble with columns: id, label, status (active/missing/deleted), deleted_at, file_exists
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-getManifestStatus"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-getManifestStatus}{}}}
+\subsection{Method \code{getManifestStatus()}}{
+Get summary status of manifest
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getManifestStatus()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+List with elements: active_count, missing_count, deleted_count, next_available_id
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-deleteCohort"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-deleteCohort}{}}}
+\subsection{Method \code{deleteCohort()}}{
+Soft delete a cohort (mark as deleted, preserve record)
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$deleteCohort(id, reason = NULL)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{id}}{Integer. The cohort ID to delete.}
+
+\item{\code{reason}}{Character. Optional reason for deletion.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns TRUE if successful, FALSE otherwise.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-hardRemoveCohort"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-hardRemoveCohort}{}}}
+\subsection{Method \code{hardRemoveCohort()}}{
+Hard delete a cohort (removes the record from database, irreversible)
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$hardRemoveCohort(id)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{id}}{Integer. The cohort ID to permanently remove.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns TRUE if successful, FALSE otherwise.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-cleanupMissing"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-cleanupMissing}{}}}
+\subsection{Method \code{cleanupMissing()}}{
+Clean up missing cohorts from manifest
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$cleanupMissing(keep_trace = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{keep_trace}}{Logical. If TRUE, marks missing as deleted with timestamp (soft delete).
+If FALSE, permanently removes from database (hard delete). Defaults to TRUE.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns NULL. Displays summary of cleanup actions.
 }
 }
 \if{html}{\out{<hr>}}

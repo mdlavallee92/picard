@@ -90,10 +90,15 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
         file_path <- record$filePath
         stored_hash <- record$hash
         tags_string <- record$tags
+        cohort_id <- record$id
 
         # Check if file still exists
         if (!file.exists(file_path)) {
-          cli::cli_alert_danger("Cohort file not found: {record$label} ({file_path})")
+          if (verbose) {
+            cli::cli_alert_warning("Cohort file missing (will be marked): {record$label} ({file_path})")
+          }
+          # Don't skip - we'll track this in the database with status='missing'
+          # For now, skip it from loading into memory but it will be in the database
           next
         }
 
@@ -104,6 +109,9 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
             tags = list(),
             filePath = file_path
           )
+
+          # Set the ID from the database to preserve it
+          cohort_entry$setId(as.integer(cohort_id))
 
           # Backfill tags from database
           if (!is.na(tags_string) && tags_string != "") {
@@ -275,6 +283,29 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
     executionSettings = executionSettings,
     dbPath = dbPath
   )
+
+  # Detect and alert about missing cohorts
+  if (verbose) {
+    missing_cohorts <- manifest$private$.detect_missing_cohorts()
+    
+    if (!is.null(missing_cohorts) && length(missing_cohorts) > 0) {
+      cli::cli_rule("Missing Cohort Files Detected")
+      cli::cli_alert_warning("{length(missing_cohorts)} cohort file(s) are missing:")
+      
+      for (cohort_info in missing_cohorts) {
+        cli::cli_bullets(c(
+          "✗" = "ID {cohort_info$id}: {cohort_info$label} ({cohort_info$filePath})"
+        ))
+      }
+      
+      cli::cli_rule()
+      cli::cli_bullets(c(
+        i = "Use {.code manifest$validateManifest()} to see full status",
+        i = "Use {.code manifest$cleanupMissing()} to remove missing cohorts",
+        i = "Or restore the missing files and reload"
+      ))
+    }
+  }
 
   return(manifest)
 }

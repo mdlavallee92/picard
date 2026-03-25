@@ -200,9 +200,15 @@ CohortManifest <- R6::R6Class(
             tags TEXT,
             filePath TEXT NOT NULL,
             hash TEXT NOT NULL,
-            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'active',
+            deleted_at DATETIME DEFAULT NULL
           )"
         )
+        
+        # Run schema migration to add status and deleted_at columns if they don't exist
+        private$migrate_schema(conn)
+        
         DBI::dbDisconnect(conn)
       } else {
         cli::cat_bullet(
@@ -314,6 +320,62 @@ CohortManifest <- R6::R6Class(
       }
     },
 
+    # Schema migration: add status and deleted_at columns if they don't exist
+    migrate_schema = function(conn) {
+      # Check if status column exists
+      schema_info <- DBI::dbGetQuery(conn, "PRAGMA table_info(cohort_manifest)")
+      col_names <- schema_info$name
+      
+      if (!("status" %in% col_names)) {
+        tryCatch({
+          DBI::dbExecute(conn, "ALTER TABLE cohort_manifest ADD COLUMN status TEXT DEFAULT 'active'")
+          cli::cli_alert_success("Schema migration: Added 'status' column")
+        }, error = function(e) {
+          cli::cli_alert_warning("Schema migration for status column failed: {e$message}")
+        })
+      }
+      
+      if (!("deleted_at" %in% col_names)) {
+        tryCatch({
+          DBI::dbExecute(conn, "ALTER TABLE cohort_manifest ADD COLUMN deleted_at DATETIME DEFAULT NULL")
+          cli::cli_alert_success("Schema migration: Added 'deleted_at' column")
+        }, error = function(e) {
+          cli::cli_alert_warning("Schema migration for deleted_at column failed: {e$message}")
+        })
+      }
+    },
+
+    # Detect missing cohort files and update status in database
+    detect_missing_cohorts = function() {
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Get all active cohorts from database
+      db_records <- tryCatch({
+        DBI::dbGetQuery(
+          conn,
+          "SELECT id, label, filePath, status FROM cohort_manifest WHERE status = 'active'"
+        )
+      }, error = function(e) {
+        return(data.frame())
+      })
+      
+      if (nrow(db_records) == 0) {
+        return(NULL)
+      }
+      
+      missing_cohorts <- list()
+      
+      for (i in seq_len(nrow(db_records))) {
+        record <- db_records[i, ]
+        if (!file.exists(record$filePath)) {
+          missing_cohorts[[length(missing_cohorts) + 1]] <- record
+        }
+      }
+      
+      return(missing_cohorts)
+    },
+
     # Validate that execution settings have been set
     validateExecutionSettings = function() {
       if (is.null(private$.executionSettings)) {
@@ -347,13 +409,35 @@ CohortManifest <- R6::R6Class(
         stop("All elements in cohortEntries must be CohortDef objects")
       }
 
-      # Assign IDs to each cohort entry
-      for (i in seq_along(cohortEntries)) {
-        cohortEntries[[i]]$setId(as.integer(i))
-      }
-
       private$.manifest <- cohortEntries
       private$.dbPath <- dbPath
+
+      # Assign IDs to each cohort entry
+      # Strategy: Preserve existing IDs (from database), assign new IDs to entries without them
+      conn <- DBI::dbConnect(RSQLite::SQLite(), dbPath)
+      on.exit(DBI::dbDisconnect(conn), add = TRUE)
+      
+      # Get the maximum ID ever assigned (including deleted cohorts)
+      max_id_result <- tryCatch({
+        DBI::dbGetQuery(conn, "SELECT MAX(id) as max_id FROM cohort_manifest")
+      }, error = function(e) {
+        data.frame(max_id = NA)
+      })
+      
+      max_id <- if (!is.na(max_id_result$max_id[1])) max_id_result$max_id[1] else 0
+      next_id <- as.integer(max_id + 1)
+      
+      # Assign IDs: preserve existing ones, assign new ones
+      for (i in seq_along(cohortEntries)) {
+        current_id <- cohortEntries[[i]]$getId()
+        
+        if (is.na(current_id)) {
+          # No ID set yet, assign the next available ID
+          cohortEntries[[i]]$setId(next_id)
+          next_id <- next_id + 1L
+        }
+        # else: ID already set (loaded from database), keep it
+      }
 
       # executionSettings is optional - only validate if provided
       if (!is.null(executionSettings)) {
@@ -1290,6 +1374,201 @@ CohortManifest <- R6::R6Class(
         cli::cli_alert_danger("Failed to retrieve cohort counts: {e$message}")
         return(NULL)
       })
+    },
+
+    #' @description Validate manifest and return status of all cohorts
+    #'
+    #' @return A tibble with columns: id, label, status (active/missing/deleted), deleted_at, file_exists
+    validateManifest = function() {
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Get all cohorts from database (including deleted ones)
+      db_records <- tryCatch({
+        DBI::dbGetQuery(
+          conn,
+          "SELECT id, label, filePath, status, deleted_at FROM cohort_manifest ORDER BY id"
+        )
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to query manifest: {e$message}")
+        return(data.frame())
+      })
+      
+      if (nrow(db_records) == 0) {
+        return(tibble::tibble(id = integer(), label = character(), status = character(), 
+                              deleted_at = character(), file_exists = logical()))
+      }
+      
+      # Add file_exists column
+      db_records$file_exists <- sapply(db_records$filePath, file.exists)
+      
+      # Convert to tibble and select columns
+      result <- tibble::tibble(
+        id = db_records$id,
+        label = db_records$label,
+        status = db_records$status,
+        deleted_at = db_records$deleted_at,
+        file_exists = db_records$file_exists
+      )
+      
+      return(result)
+    },
+
+    #' @description Get summary status of manifest
+    #'
+    #' @return List with elements: active_count, missing_count, deleted_count, next_available_id
+    getManifestStatus = function() {
+      status_df <- self$validateManifest()
+      
+      if (nrow(status_df) == 0) {
+        return(list(
+          active_count = 0L,
+          missing_count = 0L,
+          deleted_count = 0L,
+          next_available_id = 1L
+        ))
+      }
+      
+      active_count <- sum(status_df$status == "active", na.rm = TRUE)
+      missing_count <- sum(status_df$status == "active" & !status_df$file_exists, na.rm = TRUE)
+      deleted_count <- sum(status_df$status == "deleted", na.rm = TRUE)
+      next_id <- max(status_df$id, na.rm = TRUE) + 1L
+      
+      return(list(
+        active_count = active_count,
+        missing_count = missing_count,
+        deleted_count = deleted_count,
+        next_available_id = next_id
+      ))
+    },
+
+    #' @description Soft delete a cohort (mark as deleted, preserve record)
+    #'
+    #' @param id Integer. The cohort ID to delete.
+    #' @param reason Character. Optional reason for deletion.
+    #'
+    #' @return Invisibly returns TRUE if successful, FALSE otherwise.
+    deleteCohort = function(id, reason = NULL) {
+      checkmate::assert_int(id)
+      
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Check if cohort exists
+      exists <- DBI::dbGetQuery(
+        conn,
+        "SELECT COUNT(*) as count FROM cohort_manifest WHERE id = ?",
+        list(id)
+      )$count > 0
+      
+      if (!exists) {
+        cli::cli_alert_danger("Cohort with ID {id} not found in manifest")
+        return(invisible(FALSE))
+      }
+      
+      # Update status and set deleted_at timestamp
+      tryCatch({
+        DBI::dbExecute(
+          conn,
+          "UPDATE cohort_manifest SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+          list(id)
+        )
+        
+        # Get label for display
+        label_result <- DBI::dbGetQuery(
+          conn,
+          "SELECT label FROM cohort_manifest WHERE id = ?",
+          list(id)
+        )
+        label <- if (nrow(label_result) > 0) label_result$label[1] else "Unknown"
+        
+        reason_msg <- if (!is.null(reason)) glue::glue(" ({reason})") else ""
+        cli::cli_alert_success("Deleted cohort {id}: {label}{reason_msg}")
+        return(invisible(TRUE))
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to delete cohort {id}: {e$message}")
+        return(invisible(FALSE))
+      })
+    },
+
+    #' @description Hard delete a cohort (removes the record from database, irreversible)
+    #'
+    #' @param id Integer. The cohort ID to permanently remove.
+    #'
+    #' @return Invisibly returns TRUE if successful, FALSE otherwise.
+    hardRemoveCohort = function(id) {
+      checkmate::assert_int(id)
+      
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+      
+      # Check if cohort exists
+      cohort_info <- DBI::dbGetQuery(
+        conn,
+        "SELECT label, status FROM cohort_manifest WHERE id = ?",
+        list(id)
+      )
+      
+      if (nrow(cohort_info) == 0) {
+        cli::cli_alert_danger("Cohort with ID {id} not found")
+        return(invisible(FALSE))
+      }
+      
+      label <- cohort_info$label[1]
+      status <- cohort_info$status[1]
+      
+      # Hard delete
+      tryCatch({
+        DBI::dbExecute(
+          conn,
+          "DELETE FROM cohort_manifest WHERE id = ?",
+          list(id)
+        )
+        
+        cli::cli_alert_warning("Permanently removed cohort {id}: {label} (status was: {status})")
+        return(invisible(TRUE))
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to remove cohort {id}: {e$message}")
+        return(invisible(FALSE))
+      })
+    },
+
+    #' @description Clean up missing cohorts from manifest
+    #'
+    #' @param keep_trace Logical. If TRUE, marks missing as deleted with timestamp (soft delete).
+    #'   If FALSE, permanently removes from database (hard delete). Defaults to TRUE.
+    #'
+    #' @return Invisibly returns NULL. Displays summary of cleanup actions.
+    cleanupMissing = function(keep_trace = TRUE) {
+      status_df <- self$validateManifest()
+      
+      # Find missing active cohorts (file doesn't exist but status is active)
+      missing_mask <- status_df$status == "active" & !status_df$file_exists
+      missing_cohorts <- status_df[missing_mask, ]
+      
+      if (nrow(missing_cohorts) == 0) {
+        cli::cli_alert_success("No missing cohorts to clean up")
+        return(invisible(NULL))
+      }
+      
+      cli::cli_rule("Cleaning Up Missing Cohorts")
+      cli::cli_alert_info("Found {nrow(missing_cohorts)} missing cohort file(s)")
+      
+      for (i in seq_len(nrow(missing_cohorts))) {
+        cohort_id <- missing_cohorts$id[i]
+        label <- missing_cohorts$label[i]
+        
+        if (keep_trace) {
+          self$deleteCohort(cohort_id, reason = "missing file")
+        } else {
+          self$hardRemoveCohort(cohort_id)
+        }
+      }
+      
+      cleanup_method <- if (keep_trace) "soft deleted (with trace)" else "hard deleted (permanently)"
+      cli::cli_alert_success("Cleanup complete: {nrow(missing_cohorts)} cohort(s) {cleanup_method}")
+      
+      return(invisible(NULL))
     }
   )
 )

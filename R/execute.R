@@ -656,6 +656,60 @@ execStudyPipeline <- function(configBlock, updateType, env = rlang::caller_env()
     cli::cli_alert_warning("Failed to setup logging: {e$message}")
   })
   
+  # Check cohort manifest status quietly before pipeline starts
+  tryCatch({
+    # Load manifest without verbose output
+    temp_manifest <- loadCohortManifest(
+      executionSettings = NULL,
+      verbose = FALSE
+    )
+    
+    # Validate manifest to get status
+    manifest_status <- temp_manifest$validateManifest()
+    
+    # Check for missing active cohorts (file_exists = FALSE but status = active)
+    missing_mask <- manifest_status$status == "active" & !manifest_status$file_exists
+    missing_cohorts <- manifest_status[missing_mask, ]
+    
+    # If cohorts are missing, alert user and ask to proceed
+    if (nrow(missing_cohorts) > 0) {
+      cli::cli_rule("Warning: Missing Cohort Files Detected")
+      cli::cli_alert_danger("{nrow(missing_cohorts)} cohort file(s) are missing from the pipeline:")
+      
+      for (i in seq_len(nrow(missing_cohorts))) {
+        cohort <- missing_cohorts[i, ]
+        cli::cli_bullets(c("✗" = "ID {cohort$id}: {cohort$label}"))
+      }
+      
+      cli::cli_rule()
+      cli::cli_alert_warning("Do you want to continue with pipeline execution?")
+      cli::cli_bullets(c(
+        i = "Option 1: Continue (missing cohorts will be skipped)",
+        i = "Option 2: Stop now (restore files or use cleanupMissing())"
+      ))
+      
+      response <- readline(prompt = "Continue with pipeline? (yes/no): ")
+      response <- tolower(trimws(response))
+      
+      if (!(response %in% c("yes", "y"))) {
+        cli::cli_alert_info("Pipeline cancelled by user")
+        cli::cli_bullets(c(
+          i = "Use {.code manifest$cleanupMissing()} to remove missing cohorts",
+          i = "Or restore the missing files and run again"
+        ))
+        stop("Pipeline execution cancelled due to missing cohorts")
+      }
+      
+      cli::cli_alert_success("Continuing with pipeline execution...")
+    }
+  }, error = function(e) {
+    # If status check fails, log warning but continue
+    if (grepl("Pipeline execution cancelled", e$message)) {
+      stop(e$message)  # Re-throw cancellation errors
+    }
+    cli::cli_alert_warning("Could not validate cohort status (will proceed with generation): {e$message}")
+  })
+  
   # Generate cohorts before running pipeline
   cli::cli_alert_info("Generating cohorts for pipeline...")
   
