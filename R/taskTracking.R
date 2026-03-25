@@ -328,7 +328,8 @@ recordTaskExecution <- function(
     # Load manifest
     cohortManifest <- loadCohortManifest(
       executionSettings = executionSettings,
-      cohortsFolderPath = here::here("inputs/cohorts")
+      cohortsFolderPath = here::here("inputs/cohorts"),
+      verbose = FALSE
     )
     cm <- cohortManifest$getManifest()
     if (is.null(cohortManifest) || nrow(cm) == 0) {

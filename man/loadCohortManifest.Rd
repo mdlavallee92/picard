@@ -5,14 +5,12 @@
 \title{Load Cohort Manifest from Database or Cohort Files}
 \usage{
 loadCohortManifest(
-  executionSettings,
-  cohortsFolderPath = here::here("inputs/cohorts")
+  cohortsFolderPath = here::here("inputs/cohorts"),
+  executionSettings = NULL,
+  verbose = TRUE
 )
 }
 \arguments{
-\item{executionSettings}{An ExecutionSettings object containing database configuration
-for cohort generation.}
-
 \item{cohortsFolderPath}{Character. Path to the cohorts folder containing the manifest
 database and cohort definition files. Defaults to "inputs/cohorts". The function
 will look for:
@@ -21,6 +19,11 @@ will look for:
 \item \verb{json/} subfolder for CIRCE JSON cohort definitions
 \item \verb{sql/} subfolder for SQL cohort definitions
 }}
+
+\item{executionSettings}{An ExecutionSettings object containing database configuration
+for cohort generation. Optional; only required if you plan to generate cohorts or
+retrieve cohort counts. Defaults to NULL. You can add settings later using
+\code{setExecutionSettings()} on the returned CohortManifest object.}
 }
 \value{
 A CohortManifest R6 object initialized with all cohorts found.
@@ -28,6 +31,8 @@ A CohortManifest R6 object initialized with all cohorts found.
 \description{
 Loads a CohortManifest R6 object by either reading from an existing
 cohortManifest.sqlite database or by scanning the inputs/cohorts directories.
+ExecutionSettings are optional and only required if you plan to generate cohorts
+or retrieve cohort counts. You can load the manifest without them to review metadata.
 }
 \details{
 \strong{If database exists:}
@@ -63,12 +68,19 @@ Hash comparison alerts:
 }
 \examples{
 \dontrun{
+  # Load manifest for metadata review (no settings required)
+  manifest <- loadCohortManifest()
+  
+  # Or load from custom path
+  manifest <- loadCohortManifest(cohortsFolderPath = "path/to/cohorts")
+  
+  # Add execution settings later if needed for cohort generation
   settings <- ExecutionSettings$new(
     databaseName = "mydb",
     dbms = "postgresql",
     connectionDetails = list(...)
   )
-  manifest <- loadCohortManifest(settings, cohortsFolderPath = "path/to/cohorts")
+  manifest$setExecutionSettings(settings)
 }
 
 }

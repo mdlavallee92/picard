@@ -2,15 +2,19 @@
 #'
 #' Loads a CohortManifest R6 object by either reading from an existing
 #' cohortManifest.sqlite database or by scanning the inputs/cohorts directories.
+#' ExecutionSettings are optional and only required if you plan to generate cohorts
+#' or retrieve cohort counts. You can load the manifest without them to review metadata.
 #'
-#' @param executionSettings An ExecutionSettings object containing database configuration
-#'   for cohort generation.
 #' @param cohortsFolderPath Character. Path to the cohorts folder containing the manifest
 #'   database and cohort definition files. Defaults to "inputs/cohorts". The function
 #'   will look for:
 #'   - `cohortManifest.sqlite` in this folder for existing manifest data
 #'   - `json/` subfolder for CIRCE JSON cohort definitions
 #'   - `sql/` subfolder for SQL cohort definitions
+#' @param executionSettings An ExecutionSettings object containing database configuration
+#'   for cohort generation. Optional; only required if you plan to generate cohorts or
+#'   retrieve cohort counts. Defaults to NULL. You can add settings later using
+#'   `setExecutionSettings()` on the returned CohortManifest object.
 #'
 #' @return A CohortManifest R6 object initialized with all cohorts found.
 #'
@@ -44,15 +48,22 @@
 #'
 #' @examples
 #' \dontrun{
+#'   # Load manifest for metadata review (no settings required)
+#'   manifest <- loadCohortManifest()
+#'   
+#'   # Or load from custom path
+#'   manifest <- loadCohortManifest(cohortsFolderPath = "path/to/cohorts")
+#'   
+#'   # Add execution settings later if needed for cohort generation
 #'   settings <- ExecutionSettings$new(
 #'     databaseName = "mydb",
 #'     dbms = "postgresql",
 #'     connectionDetails = list(...)
 #'   )
-#'   manifest <- loadCohortManifest(settings, cohortsFolderPath = "path/to/cohorts")
+#'   manifest$setExecutionSettings(settings)
 #' }
 #'
-loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here("inputs/cohorts")) {
+loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"), executionSettings = NULL, verbose = TRUE) {
   dbPath <- fs::path(cohortsFolderPath, "cohortManifest.sqlite")
   cohort_entries <- list()
 
@@ -69,7 +80,9 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
 
     # Only load from manifest if it has entries
     if (nrow(existing_cohorts) > 0) {
-      cli::cli_alert_info("Loading cohorts from existing manifest: {dbPath}")
+      if (verbose) {
+        cli::cli_alert_info("Loading cohorts from existing manifest: {dbPath}")
+      }
 
       # Process each cohort from database
       for (i in seq_len(nrow(existing_cohorts))) {
@@ -105,22 +118,30 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
       }
 
       if (length(cohort_entries) > 0) {
-        cli::cli_alert_success("Loaded {length(cohort_entries)} cohorts from manifest")
+        if (verbose) {
+          cli::cli_alert_success("Loaded {length(cohort_entries)} cohorts from manifest")
+        }
         # Successfully loaded from manifest, proceed to create and return
       } else {
         # Database had entries but none could be loaded, fall through to scan directories
-        cli::cli_alert_warning("No valid cohorts could be loaded from manifest. Scanning directories...")
+        if (verbose) {
+          cli::cli_alert_warning("No valid cohorts could be loaded from manifest. Scanning directories...")
+        }
         cohort_entries <- list()  # Reset to empty for directory scan
       }
     } else {
       # Manifest exists but is empty, scan directories
-      cli::cli_alert_warning("Manifest exists but contains no cohort entries. Scanning directories...")
+      if (verbose) {
+        cli::cli_alert_warning("Manifest exists but contains no cohort entries. Scanning directories...")
+      }
     }
   }
 
   # If no cohorts loaded from manifest (or manifest didn't exist), scan directories
   if (length(cohort_entries) == 0) {
-    cli::cli_alert_info("Scanning cohort directories...")
+    if (verbose) {
+      cli::cli_alert_info("Scanning cohort directories...")
+    }
 
     # Define directories to search
     json_dir <- fs::path(cohortsFolderPath, "json")
@@ -139,7 +160,9 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
             filePath = file_path
           )
           cohort_entries[[length(cohort_entries) + 1]] <- cohort_entry
-          cli::cli_alert_success("Loaded JSON cohort: {label}")
+          if (verbose) {
+            cli::cli_alert_success("Loaded JSON cohort: {label}")
+          }
         }, error = function(e) {
           cli::cli_alert_danger("Error loading JSON cohort {label}: {e$message}")
         })
@@ -159,7 +182,9 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
             filePath = file_path
           )
           cohort_entries[[length(cohort_entries) + 1]] <- cohort_entry
-          cli::cli_alert_success("Loaded SQL cohort: {label}")
+          if (verbose) {
+            cli::cli_alert_success("Loaded SQL cohort: {label}")
+          }
         }, error = function(e) {
           cli::cli_alert_danger("Error loading SQL cohort {label}: {e$message}")
         })
@@ -170,13 +195,17 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
       stop("No cohort files found in cohorts/json or cohorts/sql directories")
     }
 
-    cli::cli_alert_success("Found {length(cohort_entries)} total cohorts")
+    if (verbose) {
+      cli::cli_alert_success("Found {length(cohort_entries)} total cohorts")
+    }
   }
 
   # Check for cohortsLoad.csv file to enrich entries with tags and labels
   cohorts_load_path <- fs::path(cohortsFolderPath, "cohortsLoad.csv")
   if (file.exists(cohorts_load_path)) {
-    cli::cli_alert_info("Found cohortsLoad.csv. Enriching entries with load metadata...")
+    if (verbose) {
+      cli::cli_alert_info("Found cohortsLoad.csv. Enriching entries with load metadata...")
+    }
 
     tryCatch({
       cohorts_load <- readr::read_csv(cohorts_load_path, show_col_types = FALSE)
@@ -220,14 +249,20 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
             if (length(entry_tags) > 0) {
               entry$tags <- entry_tags
               tags_added <- tags_added + 1
-              cli::cli_alert_success("Added metadata to cohort: {entry$label}")
+              if (verbose) {
+                cli::cli_alert_success("Added metadata to cohort: {entry$label}")
+              }
             }
           }
         }
 
-        cli::cli_alert_success("Updated {labels_updated} labels and added tags to {tags_added} cohort entries from cohortsLoad.csv")
+        if (verbose) {
+          cli::cli_alert_success("Updated {labels_updated} labels and added tags to {tags_added} cohort entries from cohortsLoad.csv")
+        }
       } else {
-        cli::cli_alert_warning("cohortsLoad.csv is missing required columns: {paste(missing_cols, collapse = ', ')}")
+        if (verbose) {
+          cli::cli_alert_warning("cohortsLoad.csv is missing required columns: {paste(missing_cols, collapse = ', ')}")
+        }
       }
     }, error = function(e) {
       cli::cli_alert_danger("Error reading cohortsLoad.csv: {e$message}")
@@ -270,9 +305,8 @@ loadCohortManifest <- function(executionSettings, cohortsFolderPath = here::here
 #'   # Reset the manifest
 #'   resetCohortManifest()
 #'
-#'   # Rebuild it from cohort files
-#'   settings <- ExecutionSettings$new(...)
-#'   manifest <- loadCohortManifest(settings)
+#'   # Rebuild it (with or without settings)
+#'   manifest <- loadCohortManifest()
 #' }
 #'
 resetCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts")) {
@@ -617,9 +651,8 @@ parseTagsString <- function(tags_str) {
 #'     atlasConnection = setAtlasConnection()
 #'   )
 #'
-#'   # Then load the manifest
-#'   settings <- createExecutionSettings(...)
-#'   manifest <- loadCohortManifest(settings)
+#'   # Then load the manifest (no settings required for metadata review)
+#'   manifest <- loadCohortManifest()
 #' }
 #'
 importAtlasCohorts <- function(cohortsFolderPath,

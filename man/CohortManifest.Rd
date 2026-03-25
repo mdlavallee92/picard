@@ -70,7 +70,7 @@ Initialize a new CohortManifest
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CohortManifest$new(
   cohortEntries,
-  executionSettings,
+  executionSettings = NULL,
   dbPath = "inputs/cohorts/cohortManifest.sqlite"
 )}\if{html}{\out{</div>}}
 }
@@ -80,9 +80,9 @@ Initialize a new CohortManifest
 \describe{
 \item{\code{cohortEntries}}{List. A list of CohortDef objects.}
 
-\item{\code{executionSettings}}{Object. Execution settings for DBMS cohort generation.
-Can be any object type containing configuration for how cohorts should be executed
-on the target database.}
+\item{\code{executionSettings}}{Object. Execution settings for DBMS cohort generation (optional).
+If provided, enables database operations like generateCohorts(). Can be added later
+via setExecutionSettings(). Defaults to NULL for read-only mode.}
 
 \item{\code{dbPath}}{Character. Path to the SQLite database. Defaults to
 "inputs/cohorts/cohortManifest.sqlite"

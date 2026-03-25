@@ -66,9 +66,8 @@ cohort JSON files and build the manifest with metadata.
     atlasConnection = setAtlasConnection()
   )
 
-  # Then load the manifest
-  settings <- createExecutionSettings(...)
-  manifest <- loadCohortManifest(settings)
+  # Then load the manifest (no settings required for metadata review)
+  manifest <- loadCohortManifest()
 }
 
 }

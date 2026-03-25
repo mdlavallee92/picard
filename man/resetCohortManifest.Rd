@@ -33,9 +33,8 @@ the available cohort files in the json/ and sql/ subdirectories.
   # Reset the manifest
   resetCohortManifest()
 
-  # Rebuild it from cohort files
-  settings <- ExecutionSettings$new(...)
-  manifest <- loadCohortManifest(settings)
+  # Rebuild it (with or without settings)
+  manifest <- loadCohortManifest()
 }
 
 }

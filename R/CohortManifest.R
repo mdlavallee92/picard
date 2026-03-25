@@ -312,6 +312,16 @@ CohortManifest <- R6::R6Class(
         cli::cli_rule("Manifest Update Summary")
         cli::cli_alert_success("Updated: {updated_count} | New: {new_count} | Unchanged: {unchanged_count}")
       }
+    },
+
+    # Validate that execution settings have been set
+    validateExecutionSettings = function() {
+      if (is.null(private$.executionSettings)) {
+        stop(
+          "This operation requires ExecutionSettings. ",
+          "Use setExecutionSettings() to add database configuration before proceeding."
+        )
+      }
     }
   ),
 
@@ -319,12 +329,12 @@ CohortManifest <- R6::R6Class(
     #' @description Initialize a new CohortManifest
     #'
     #' @param cohortEntries List. A list of CohortDef objects.
-    #' @param executionSettings Object. Execution settings for DBMS cohort generation.
-    #'   Can be any object type containing configuration for how cohorts should be executed
-    #'   on the target database.
+    #' @param executionSettings Object. Execution settings for DBMS cohort generation (optional).
+    #'   If provided, enables database operations like generateCohorts(). Can be added later
+    #'   via setExecutionSettings(). Defaults to NULL for read-only mode.
     #' @param dbPath Character. Path to the SQLite database. Defaults to
     #'   "inputs/cohorts/cohortManifest.sqlite"
-    initialize = function(cohortEntries, executionSettings, dbPath = "inputs/cohorts/cohortManifest.sqlite") {
+    initialize = function(cohortEntries, executionSettings = NULL, dbPath = "inputs/cohorts/cohortManifest.sqlite") {
       # Validate input is a list
       checkmate::assert_list(x = cohortEntries, min.len = 1)
 
@@ -345,7 +355,10 @@ CohortManifest <- R6::R6Class(
       private$.manifest <- cohortEntries
       private$.dbPath <- dbPath
 
-      checkmate::assert_class(x = executionSettings, classes = "ExecutionSettings")
+      # executionSettings is optional - only validate if provided
+      if (!is.null(executionSettings)) {
+        checkmate::assert_class(x = executionSettings, classes = "ExecutionSettings")
+      }
       private$.executionSettings <- executionSettings
 
       # Initialize and populate manifest
@@ -700,13 +713,11 @@ CohortManifest <- R6::R6Class(
     #'
     #' @return Invisible NULL. Creates tables in the database and prints status messages.
     createCohortTables = function() {
-      # Validate execution settings
-      settings <- private$.executionSettings
-      if (is.null(settings)) {
-        stop("Execution settings must be set before creating cohort tables")
-      }
+      # Validate execution settings are available
+      private$validateExecutionSettings()
 
       # Get execution parameters
+      settings <- private$.executionSettings
       conn <- settings$getConnection()
       if (is.null(conn)) {
         settings$connect()
@@ -934,13 +945,11 @@ CohortManifest <- R6::R6Class(
     #'
     #' @return Data frame with execution results including cohort_id, label, execution_time_min, and status
     generateCohorts = function() {
-      # Validate execution settings
-      settings <- private$.executionSettings
-      if (is.null(settings)) {
-        stop("Execution settings must be set before generating cohorts")
-      }
+      # Validate execution settings are available
+      private$validateExecutionSettings()
 
       # Get connection
+      settings <- private$.executionSettings
       conn <- settings$getConnection()
       if (is.null(conn)) {
         settings$connect()
@@ -1196,13 +1205,11 @@ CohortManifest <- R6::R6Class(
     #'   - cohort_subjects: Number of distinct subjects in the cohort
     #'
     retrieveCohortCounts = function(cohortIds = NULL) {
-      # Validate execution settings
-      settings <- private$.executionSettings
-      if (is.null(settings)) {
-        stop("Execution settings must be set before retrieving cohort counts")
-      }
+      # Validate execution settings are available
+      private$validateExecutionSettings()
 
       # Get connection
+      settings <- private$.executionSettings
       conn <- settings$getConnection()
       if (is.null(conn)) {
         settings$connect()

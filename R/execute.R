@@ -268,7 +268,7 @@ generateCohorts <- function(executionSettings, pipelineVersion, override = FALSE
     cli::cli_h2("Option 3: Place cohort files and reload")
     cli::cli_bullets(c(
       "Place JSON or SQL files in {.path {cohortsFolderPath}/json} or {.path {cohortsFolderPath}/sql}",
-      "Then call: {.code loadCohortManifest(executionSettings)}"
+      "Then call: {.code loadCohortManifest()}"
     ))
     cli::cli_rule()
     stop("Cannot proceed without a cohort manifest. Please create one using one of the options above.")
@@ -500,6 +500,14 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
 execStudyPipeline <- function(configBlock, updateType, env = rlang::caller_env()) {
   
   cli::cli_rule("Execute Study Pipeline")
+  
+  # Validate config.yml file structure
+  tryCatch({
+    validateConfigYaml()
+  }, error = function(e) {
+    cli::cli_alert_danger("Config validation failed: {e$message}")
+    stop("Pipeline cannot proceed with invalid configuration")
+  })
   
   # Validate updateType parameter
   tryCatch({
