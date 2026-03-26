@@ -19,15 +19,13 @@ cleanColumnNames <- function(data, to_lower = TRUE) {
   checkmate::assert_logical(to_lower, len = 1)
 
   # Convert column names to snake_case
-  new_names <- colnames(data) |>
-    # Replace spaces with underscores
-    gsub(" ", "_", x = _) |>
-    # Replace periods with underscores
-    gsub("\\.", "_", x = _) |>
-    # Convert CamelCase to snake_case
-    gsub("([a-z])([A-Z])", "\\1_\\2", x = _) |>
-    # Convert to lowercase if requested
-    {if (to_lower) tolower(.) else .}
+  new_names <- colnames(data)
+  new_names <- gsub(" ", "_", new_names)
+  new_names <- gsub("\\.", "_", new_names)
+  new_names <- gsub("([a-z])([A-Z])", "\\1_\\2", new_names)
+  if (to_lower) {
+    new_names <- tolower(new_names)
+  }
 
   colnames(data) <- new_names
   return(data)
@@ -54,7 +52,7 @@ cleanColumnNames <- function(data, to_lower = TRUE) {
 #'
 formatPercentages <- function(data, percent_cols = NULL, decimal_places = 1, add_symbol = TRUE) {
   checkmate::assert_data_frame(data)
-  checkmate::assert_integer(decimal_places, lower = 0, upper = 10)
+  checkmate::assert_integerish(decimal_places, lower = 0, upper = 10)
   checkmate::assert_logical(add_symbol, len = 1)
 
   # Auto-detect percentage columns if not specified
@@ -105,7 +103,7 @@ formatPercentages <- function(data, percent_cols = NULL, decimal_places = 1, add
 #'
 formatFloats <- function(data, float_cols = NULL, decimal_places = 2, remove_trailing_zeros = TRUE) {
   checkmate::assert_data_frame(data)
-  checkmate::assert_integer(decimal_places, lower = 0, upper = 10)
+  checkmate::assert_integerish(decimal_places, lower = 0, upper = 10)
   checkmate::assert_logical(remove_trailing_zeros, len = 1)
 
   # Auto-detect float columns if not specified
