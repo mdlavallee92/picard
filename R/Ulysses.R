@@ -644,10 +644,10 @@ ExecOptions <- R6::R6Class(
 
 
 listDefaultFolders <- function(repoPath) {
-  analysisFolders <- c("src", "tasks", "migrations")
+  analysisFolders <- c("src", "tasks")
   execFolders <- c('logs', 'results')
   inputFolders <- c("cohorts/json", "cohorts/sql", "conceptSets/json")
-  disseminationFolders <- c("quarto", "export/pretty", "export/merge", "documents")
+  disseminationFolders <- c("quarto", "export", "documents")
 
   folders <- c(
     paste('inputs', inputFolders, sep = "/"),

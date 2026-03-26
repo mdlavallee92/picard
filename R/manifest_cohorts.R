@@ -880,3 +880,265 @@ importAtlasCohorts <- function(cohortsFolderPath,
   cli::cli_alert_success("ATLAS cohort import complete")
   invisible(cohort_load)
 }
+
+#' Visualize Cohort Dependencies in a Report
+#'
+#' Creates a comprehensive markdown report visualizing the dependency structure
+#' of all cohorts in a CohortManifest. The report includes a mermaid diagram
+#' showing the dependency graph and a detailed table of all cohorts with their
+#' relationships.
+#'
+#' @param manifest A CohortManifest object containing loaded cohorts.
+#' @param outputPath Character. Optional path to save the markdown report. If NULL,
+#'   the report is not saved to file. If a folder path is provided, the report is
+#'   saved as "cohort_dependencies.md" in that folder. Defaults to NULL.
+#'
+#' @return Character. The markdown report content (invisibly if saved to file).
+#'
+#' @details
+#' The report includes:
+#' - **Overview**: Summary statistics (total cohorts, base cohorts, dependent cohorts)
+#' - **Dependency Diagram**: Mermaid graph showing how cohorts depend on each other
+#' - **Cohort Summary Table**: Details on each cohort including type and dependencies
+#' - **Dependency Tree**: Hierarchical view of base cohorts and their dependents
+#'
+#' The mermaid diagram uses:
+#' - Rectangles for CIRCE (base) cohorts
+#' - Circles for subset cohorts
+#' - Diamonds for union cohorts  
+#' - Hexagons for complement cohorts
+#' - Arrows showing dependency direction (parent → dependent)
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'   manifest <- loadCohortManifest()
+#'   
+#'   # View report in console
+#'   report <- visualizeCohortDependencies(manifest)
+#'   
+#'   # Save report to cohorts folder
+#'   visualizeCohortDependencies(manifest, outputPath = "inputs/cohorts")
+#' }
+#'
+visualizeCohortDependencies <- function(manifest, outputPath = NULL) {
+  checkmate::assert_r6(manifest, classes = "CohortManifest")
+  checkmate::assert_character(outputPath, len = 1, null.ok = TRUE)
+  
+  # Access the private manifest list
+  cohort_list <- manifest$private$.manifest
+  
+  if (length(cohort_list) == 0) {
+    cli::cli_alert_warning("No cohorts found in manifest")
+    return(invisible(NULL))
+  }
+  
+  # Build summary statistics
+  total_cohorts <- length(cohort_list)
+  cohort_types <- sapply(cohort_list, function(c) c$getCohortType())
+  
+  type_counts <- table(cohort_types)
+  base_cohort_count <- ifelse("circe" %in% names(type_counts), type_counts[["circe"]], 0)
+  dependent_cohort_count <- total_cohorts - base_cohort_count
+  
+  # Build mermaid diagram
+  mermaid_lines <- c("graph TD")
+  
+  # Process each cohort for mermaid nodes and edges
+  node_defs <- character()
+  edge_defs <- character()
+  
+  for (cohort in cohort_list) {
+    cohort_id <- cohort$getId()
+    cohort_label <- cohort$label
+    cohort_type <- cohort$getCohortType()
+    
+    # Create node definition based on cohort type
+    if (cohort_type == "circe") {
+      node_shape <- "[\"{cohort_label}\"]"  # Rectangle for CIRCE
+    } else if (cohort_type == "subset") {
+      node_shape <- "(\"{cohort_label}\")"  # Circle for subset
+    } else if (cohort_type == "union") {
+      node_shape <- "{{\"{cohort_label}\"}}"  # Diamond for union
+    } else {
+      node_shape <- "{{{{\"{cohort_label}\"}}}}}"  # Hexagon for complement
+    }
+    
+    node_id <- paste0("c", cohort_id)
+    node_defs <- c(node_defs, paste0(node_id, node_shape))
+    
+    # Get dependencies and create edges
+    deps <- cohort$getDependencies()
+    if (!is.null(deps) && length(deps$ids) > 0) {
+      for (parent_id in deps$ids) {
+        parent_node_id <- paste0("c", parent_id)
+        edge_defs <- c(edge_defs, paste0(parent_node_id, " --> ", node_id))
+      }
+    }
+  }
+  
+  mermaid_lines <- c(mermaid_lines, node_defs, edge_defs)
+  mermaid_diagram <- paste(mermaid_lines, collapse = "\n")
+  
+  # Build cohort summary table
+  cohort_rows <- character()
+  
+  for (cohort in cohort_list) {
+    cohort_id <- cohort$getId()
+    cohort_label <- cohort$label
+    cohort_type <- cohort$getCohortType()
+    
+    deps <- cohort$getDependencies()
+    depends_on_str <- ifelse(
+      is.null(deps) || length(deps$ids) == 0,
+      "None",
+      paste(deps$ids, collapse = ", ")
+    )
+    
+    cohort_rows <- c(
+      cohort_rows,
+      paste0(
+        "| ", cohort_id, " | ", cohort_label, " | ",
+        cohort_type, " | ", depends_on_str, " |"
+      )
+    )
+  }
+  
+  # Build dependency tree (hierarchical view)
+  tree_lines <- character()
+  processed_env <- new.env()
+  processed_env$ids <- integer()
+  
+  # Start with base cohorts
+  for (cohort in cohort_list) {
+    if (cohort$getCohortType() == "circe") {
+      cohort_id <- cohort$getId()
+      tree_lines <- c(
+        tree_lines,
+        paste0("- **", cohort$label, "** (ID: ", cohort_id, ")")
+      )
+      processed_env$ids <- c(processed_env$ids, cohort_id)
+      
+      # Find dependents
+      result <- .build_dependency_tree(
+        cohort_id = cohort_id,
+        cohort_list = cohort_list,
+        processed_env = processed_env,
+        indent = "  ",
+        tree_lines = tree_lines
+      )
+      tree_lines <- result$tree_lines
+      processed_env <- result$processed_env
+    }
+  }
+  
+  # Add orphaned dependent cohorts (if any exist without base cohort loaded)
+  for (cohort in cohort_list) {
+    if (!(cohort$getId() %in% processed_env$ids)) {
+      cohort_id <- cohort$getId()
+      cohort_type <- cohort$getCohortType()
+      tree_lines <- c(
+        tree_lines,
+        paste0("- **", cohort$label, "** (ID: ", cohort_id, ", Type: ", cohort_type, ")")
+      )
+      processed_env$ids <- c(processed_env$ids, cohort_id)
+    }
+  }
+  
+  # Construct the markdown report
+  report <- paste0(
+    "# Cohort Dependency Report\n\n",
+    "**Generated**: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n",
+    "## Overview\n\n",
+    "| Metric | Count |\n",
+    "|--------|-------|\n",
+    "| Total Cohorts | ", total_cohorts, " |\n",
+    "| Base Cohorts (CIRCE) | ", base_cohort_count, " |\n",
+    "| Dependent Cohorts | ", dependent_cohort_count, " |\n",
+    "\n",
+    "### Cohort Type Breakdown\n\n",
+    paste(
+      sapply(
+        names(type_counts),
+        function(type) paste0("- **", type, "**: ", type_counts[[type]])
+      ),
+      collapse = "\n"
+    ),
+    "\n\n",
+    "## Dependency Diagram\n\n",
+    "```mermaid\n",
+    mermaid_diagram,
+    "\n```\n\n",
+    "**Legend:**\n",
+    "- ▭ Rectangle: CIRCE (base) cohort\n",
+    "- ◯ Circle: Subset cohort\n",
+    "- ◇ Diamond: Union cohort\n",
+    "- ⬡ Hexagon: Complement cohort\n\n",
+    "## Cohort Summary Table\n\n",
+    "| ID | Label | Type | Depends On |\n",
+    "|----|----|------|----------|\n",
+    paste(cohort_rows, collapse = "\n"),
+    "\n\n",
+    "## Dependency Hierarchy\n\n",
+    paste(tree_lines, collapse = "\n"),
+    "\n\n",
+    "---\n",
+    "*Report generated by picard dependency visualizer*\n"
+  )
+  
+  # Save to file if outputPath specified
+  if (!is.null(outputPath)) {
+    # Ensure output folder exists
+    if (!dir.exists(outputPath)) {
+      dir.create(outputPath, recursive = TRUE, showWarnings = FALSE)
+    }
+    
+    output_file <- fs::path(outputPath, "cohort_dependencies.md")
+    readr::write_file(report, file = output_file)
+    
+    cli::cli_alert_success(
+      "Dependency report saved to: {fs::path_rel(output_file)}"
+    )
+  }
+  
+  invisible(report)
+}
+
+# Helper function to recursively build dependency tree
+.build_dependency_tree <- function(cohort_id, cohort_list, processed_env, indent = "", tree_lines = character()) {
+  # Find all cohorts that depend on this cohort_id
+  dependents <- list()
+  
+  for (cohort in cohort_list) {
+    deps <- cohort$getDependencies()
+    if (!is.null(deps) && cohort_id %in% deps$ids && !(cohort$getId() %in% processed_env$ids)) {
+      dependents[[length(dependents) + 1]] <- cohort
+      processed_env$ids <- c(processed_env$ids, cohort$getId())
+    }
+  }
+  
+  # Add dependents to tree
+  for (dependent in dependents) {
+    dep_id <- dependent$getId()
+    dep_label <- dependent$label
+    dep_type <- dependent$getCohortType()
+    tree_lines <- c(
+      tree_lines,
+      paste0(indent, "- *", dep_label, "* (ID: ", dep_id, ", Type: ", dep_type, ")")
+    )
+    
+    # Recursively add sub-dependents
+    result <- .build_dependency_tree(
+      cohort_id = dep_id,
+      cohort_list = cohort_list,
+      processed_env = processed_env,
+      indent = paste0(indent, "  "),
+      tree_lines = tree_lines
+    )
+    tree_lines <- result$tree_lines
+    processed_env <- result$processed_env
+  }
+  
+  return(list(tree_lines = tree_lines, processed_env = processed_env))
+}

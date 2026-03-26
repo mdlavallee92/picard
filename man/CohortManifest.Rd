@@ -31,6 +31,25 @@ Requires that executionSettings has been set and includes:
 \item cohortTable with the desired table name
 }
 
+The cohort is assigned a new ID equal to max(existing_id) + 1. Parent cohorts
+(specified in dependsOnCohortIds) must already exist in this manifest.
+The cohort is immediately persisted to the SQLite manifest database.
+
+Execution flow:
+\enumerate{
+\item Build dependency graph from all CohortDef objects
+\item Validate no circular dependencies (error if found)
+\item Topologically sort cohorts by dependencies (parents before children)
+\item For each cohort in topological order:
+\itemize{
+\item circe cohorts: check SQL hash (existing logic)
+\item dependent cohorts: compute dependency hash from parent hashes + rule
+}
+\item Render and execute SQL (circe uses SqlRender parameters, dependent uses metadata JSON)
+\item Record checksums and dependency hashes in database
+\item Report results with cohort_type, depends_on, dependency_status columns
+}
+
 Requires that executionSettings has been set and includes:
 \itemize{
 \item A database connection (via getConnection())
@@ -57,6 +76,9 @@ Requires that executionSettings has been set and includes:
 \item \href{#method-CohortManifest-grabCohortsByLabel}{\code{CohortManifest$grabCohortsByLabel()}}
 \item \href{#method-CohortManifest-createCohortTables}{\code{CohortManifest$createCohortTables()}}
 \item \href{#method-CohortManifest-dropCohortTables}{\code{CohortManifest$dropCohortTables()}}
+\item \href{#method-CohortManifest-addDependentCohort}{\code{CohortManifest$addDependentCohort()}}
+\item \href{#method-CohortManifest-compute_dependency_hash}{\code{CohortManifest$compute_dependency_hash()}}
+\item \href{#method-CohortManifest-load_metadata_for_cohort}{\code{CohortManifest$load_metadata_for_cohort()}}
 \item \href{#method-CohortManifest-generateCohorts}{\code{CohortManifest$generateCohorts()}}
 \item \href{#method-CohortManifest-retrieveCohortCounts}{\code{CohortManifest$retrieveCohortCounts()}}
 \item \href{#method-CohortManifest-validateManifest}{\code{CohortManifest$validateManifest()}}
@@ -327,7 +349,78 @@ If NULL (default), drops all table types.}
 }
 \subsection{Returns}{
 Invisible NULL. Drops tables from the database and prints status messages.
-Generate cohorts in the database
+Add a dependent cohort to the manifest
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-addDependentCohort"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-addDependentCohort}{}}}
+\subsection{Method \code{addDependentCohort()}}{
+Adds a dependent CohortDef object (subset, union, or complement) to the manifest.
+Only works for cohorts created with the builder functions in buildDependentCohorts.R.
+Validates that parent cohorts exist in this manifest before adding.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$addDependentCohort(cohortDef)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cohortDef}}{A CohortDef object with cohortType of 'subset', 'union', or 'complement'
+(created via buildSubsetCohort_Temporal, buildUnionCohort, etc.)}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Invisibly returns the assigned cohort ID.
+Compute dependency hash for a dependent cohort
+
+Combines parent cohort hashes with the dependency rule parameters.
+Used to detect if a dependent cohort needs regeneration when parents change.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-compute_dependency_hash"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-compute_dependency_hash}{}}}
+\subsection{Method \code{compute_dependency_hash()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$compute_dependency_hash(cohort, parent_hashes)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cohort}}{CohortDef object}
+
+\item{\code{parent_hashes}}{List of parent cohort hashes keyed by cohort ID}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Character string (MD5 hash) of the dependency specification
+Load metadata JSON for a dependent cohort
+
+Reads the metadata JSON file associated with a dependent cohort
+and returns the parameterization for SQL rendering.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-load_metadata_for_cohort"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-load_metadata_for_cohort}{}}}
+\subsection{Method \code{load_metadata_for_cohort()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$load_metadata_for_cohort(cohortFilePath)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cohortFilePath}}{Character. Path to the SQL file for the cohort.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+List containing metadata parameters for SqlRender
 }
 }
 \if{html}{\out{<hr>}}
@@ -335,6 +428,7 @@ Generate cohorts in the database
 \if{latex}{\out{\hypertarget{method-CohortManifest-generateCohorts}{}}}
 \subsection{Method \code{generateCohorts()}}{
 Generates cohorts in the manifest in the target database using the execution settings.
+Checks dependency ordering and regenerates dependent cohorts when parents change.
 Checks the hash of each cohort definition and skips generation if the hash matches what's
 already stored in the cohort_checksum table. If hashes differ or the cohort is not yet in
 the checksum table, regenerates and updates the hash.
@@ -343,7 +437,16 @@ the checksum table, regenerates and updates the hash.
 }
 
 \subsection{Returns}{
-Data frame with execution results including cohort_id, label, execution_time_min, and status
+Data frame with execution results including:
+\itemize{
+\item cohort_id: ID of the generated cohort
+\item label: Label of the cohort
+\item cohort_type: 'circe', 'subset', 'union', or 'complement'
+\item depends_on: Comma-separated parent cohort IDs (empty for circe cohorts)
+\item execution_time_min: Time taken to generate (0 for skipped)
+\item status: 'Success', 'Skipped - already generated', 'Dependency skipped', or error message
+\item dependency_status: 'Not applicable' for circe, 'Parent changed' or 'Unchanged' for dependent
+}
 }
 }
 \if{html}{\out{<hr>}}

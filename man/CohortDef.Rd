@@ -36,6 +36,12 @@ the generated SQL.
 \item \href{#method-CohortDef-getId}{\code{CohortDef$getId()}}
 \item \href{#method-CohortDef-setId}{\code{CohortDef$setId()}}
 \item \href{#method-CohortDef-formatTagsAsString}{\code{CohortDef$formatTagsAsString()}}
+\item \href{#method-CohortDef-getCohortType}{\code{CohortDef$getCohortType()}}
+\item \href{#method-CohortDef-setCohortType}{\code{CohortDef$setCohortType()}}
+\item \href{#method-CohortDef-getDependencies}{\code{CohortDef$getDependencies()}}
+\item \href{#method-CohortDef-setDependencies}{\code{CohortDef$setDependencies()}}
+\item \href{#method-CohortDef-getDependencyHash}{\code{CohortDef$getDependencyHash()}}
+\item \href{#method-CohortDef-setDependencyHash}{\code{CohortDef$setDependencyHash()}}
 \item \href{#method-CohortDef-clone}{\code{CohortDef$clone()}}
 }
 }
@@ -140,6 +146,98 @@ Format tags as string}
 
 \subsection{Returns}{
 Character. Tags formatted as "name: value | name: value".
+Get the cohort type
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-getCohortType"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-getCohortType}{}}}
+\subsection{Method \code{getCohortType()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$getCohortType()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+Character. One of 'source', 'subset', 'union', 'complement'. Default: 'source'.
+Set the cohort type (internal use)
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-setCohortType"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-setCohortType}{}}}
+\subsection{Method \code{setCohortType()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$setCohortType(cohortType)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cohortType}}{Character. One of 'circe', 'subset', 'union', 'complement'.
+Get dependency information}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-getDependencies"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-getDependencies}{}}}
+\subsection{Method \code{getDependencies()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$getDependencies()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+List with elements: cohort_ids (integer vector), rule (list of parameters).
+Set dependency information (internal use)
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-setDependencies"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-setDependencies}{}}}
+\subsection{Method \code{setDependencies()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$setDependencies(dependsOnCohortIds, dependencyRule)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{dependsOnCohortIds}}{Integer vector of parent cohort IDs.}
+
+\item{\code{dependencyRule}}{List of dependency parameters.
+Get the dependency hash}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-getDependencyHash"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-getDependencyHash}{}}}
+\subsection{Method \code{getDependencyHash()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$getDependencyHash()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+Character. Hash of dependencies for change detection, or NULL if none.
+Set the dependency hash (internal use)
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortDef-setDependencyHash"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortDef-setDependencyHash}{}}}
+\subsection{Method \code{setDependencyHash()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortDef$setDependencyHash(depHash)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{depHash}}{Character. Hash to set.}
+}
+\if{html}{\out{</div>}}
 }
 }
 \if{html}{\out{<hr>}}

@@ -19,6 +19,11 @@ CohortDef <- R6::R6Class(
     .sql = NULL,
     .hash = NULL,
     .id = NULL,
+    # Dependent cohort fields
+    .cohortType = "circe",
+    .dependsOnCohortIds = integer(0),
+    .dependencyRule = list(),
+    .dependencyHash = NULL,
 
     # Load SQL from file
     load_sql_from_file = function(filePath) {
@@ -127,6 +132,57 @@ CohortDef <- R6::R6Class(
         SIMPLIFY = TRUE
       )
       paste(tags_str, collapse = " | ")
+    },
+
+    #' Get the cohort type
+    #'
+    #' @return Character. One of 'source', 'subset', 'union', 'complement'. Default: 'source'.
+    getCohortType = function() {
+      private$.cohortType
+    },
+
+    #' Set the cohort type (internal use)
+    #'
+    #' @param cohortType Character. One of 'circe', 'subset', 'union', 'complement'.
+    setCohortType = function(cohortType) {
+      checkmate::assert_choice(x = cohortType, choices = c("circe", "subset", "union", "complement"))
+      private$.cohortType <- cohortType
+    },
+
+    #' Get dependency information
+    #'
+    #' @return List with elements: cohort_ids (integer vector), rule (list of parameters).
+    getDependencies = function() {
+      list(
+        cohort_ids = private$.dependsOnCohortIds,
+        rule = private$.dependencyRule
+      )
+    },
+
+    #' Set dependency information (internal use)
+    #'
+    #' @param dependsOnCohortIds Integer vector of parent cohort IDs.
+    #' @param dependencyRule List of dependency parameters.
+    setDependencies = function(dependsOnCohortIds, dependencyRule) {
+      checkmate::assert_integerish(x = dependsOnCohortIds, unique = TRUE)
+      checkmate::assert_list(x = dependencyRule)
+      private$.dependsOnCohortIds <- as.integer(dependsOnCohortIds)
+      private$.dependencyRule <- dependencyRule
+    },
+
+    #' Get the dependency hash
+    #'
+    #' @return Character. Hash of dependencies for change detection, or NULL if none.
+    getDependencyHash = function() {
+      private$.dependencyHash
+    },
+
+    #' Set the dependency hash (internal use)
+    #'
+    #' @param depHash Character. Hash to set.
+    setDependencyHash = function(depHash) {
+      checkmate::assert_character(x = depHash, len = 1, min.chars = 1)
+      private$.dependencyHash <- depHash
     }
   ),
 
@@ -384,6 +440,155 @@ CohortManifest <- R6::R6Class(
           "Use setExecutionSettings() to add database configuration before proceeding."
         )
       }
+    },
+
+    # ========== PRIVATE HELPER METHODS FOR DEPENDENCY MANAGEMENT ==========
+
+    # Build a dependency graph from all cohorts in the manifest
+    #
+    # Creates an adjacency list representation of dependencies.
+    # Returns a list where each cohort ID maps to a vector of cohorts it depends on.
+    build_dependency_graph = function() {
+      graph <- list()
+
+      for (cohort in private$.manifest) {
+        cohort_id <- cohort$getId()
+        deps <- cohort$getDependencies()
+        parent_ids <- deps$cohort_ids
+
+        # Each cohort maps to its dependencies
+        if (length(parent_ids) > 0) {
+          graph[[as.character(cohort_id)]] <- parent_ids
+        } else {
+          graph[[as.character(cohort_id)]] <- integer(0)
+        }
+      }
+
+      return(graph)
+    },
+
+    # Validate that the dependency graph has no cycles (is a DAG)
+    #
+    # Uses depth-first search to detect cycles. Throws an error if a cycle is found.
+    validate_no_cycles = function(graph) {
+      # DFS-based cycle detection using color marking (white/gray/black)
+      state <- new.env()
+      state$colors <- rep("white", length(graph))
+      names(state$colors) <- names(graph)
+      state$cycle_found <- FALSE
+      state$cycle_msg <- ""
+
+      visit_node <- function(node_id) {
+        state$colors[[node_id]] <- "gray"
+
+        deps <- graph[[node_id]]
+        if (length(deps) > 0) {
+          for (dep_id in deps) {
+            if (state$cycle_found) return()
+
+            dep_str <- as.character(dep_id)
+            if (!dep_str %in% names(graph)) {
+              cli::cli_abort("Cohort {node_id} depends on non-existent cohort {dep_id}")
+            }
+
+            color <- state$colors[[dep_str]]
+            if (color == "gray") {
+              state$cycle_found <- TRUE
+              state$cycle_msg <- paste0("Circular dependency detected: Cohort ", node_id, " -> ", dep_id)
+              return()
+            } else if (color == "white") {
+              visit_node(dep_str)
+            }
+          }
+        }
+
+        state$colors[[node_id]] <- "black"
+      }
+
+      # Visit all nodes
+      for (node in names(graph)) {
+        if (state$cycle_found) break
+        if (state$colors[[node]] == "white") {
+          visit_node(node)
+        }
+      }
+
+      if (state$cycle_found) {
+        cli::cli_abort(state$cycle_msg)
+      }
+
+      cli::cli_alert_success("No circular dependencies detected")
+    },
+
+    # Topologically sort cohorts by dependencies
+    #
+    # Returns a vector of cohort IDs in execution order (dependencies before dependents).
+    topological_sort = function(graph) {
+      # Kahn's algorithm: in-degree based topological sort
+      in_degree <- rep(0L, length(graph))
+      names(in_degree) <- names(graph)
+
+      # Calculate in-degrees
+      for (node_id in names(graph)) {
+        deps <- graph[[node_id]]
+        if (length(deps) > 0) {
+          for (dep_id in deps) {
+            dep_str <- as.character(dep_id)
+            if (dep_str %in% names(in_degree)) {
+              in_degree[[dep_str]] <- in_degree[[dep_str]] + 1L
+            }
+          }
+        }
+      }
+
+      # Initialize queue with nodes having in_degree = 0
+      queue <- as.integer(names(in_degree[in_degree == 0]))
+      sorted_order <- integer()
+
+      # Process nodes in topological order
+      while (length(queue) > 0) {
+        node_id <- queue[1]
+        queue <- queue[-1]
+        sorted_order <- c(sorted_order, node_id)
+
+        # For each dependent of this node
+        deps <- graph[[as.character(node_id)]]
+        if (length(deps) > 0) {
+          for (dep_id in deps) {
+            dep_str <- as.character(dep_id)
+            if (dep_str %in% names(in_degree)) {
+              in_degree[[dep_str]] <- in_degree[[dep_str]] - 1L
+
+              if (in_degree[[dep_str]] == 0) {
+                queue <- c(queue, as.integer(dep_id))
+              }
+            }
+          }
+        }
+      }
+
+      # Verify all nodes were processed
+      if (length(sorted_order) != length(graph)) {
+        cli::cli_abort("Topological sort failed - possible circular dependency")
+      }
+
+      return(sorted_order)
+    },
+
+    expand_metadata_parameters = function(metadata, sql_params, field_mapping) {
+      for (meta_field in names(field_mapping)) {
+        if (!is.null(metadata[[meta_field]])) {
+          sql_param_name <- field_mapping[[meta_field]]
+          sql_params[[sql_param_name]] <- metadata[[meta_field]]
+
+          # For vector-type params, also add count
+          if (grepl("_ids$", meta_field)) {
+            count_param <- paste0(sql_param_name, "_count")
+            sql_params[[count_param]] <- length(metadata[[meta_field]])
+          }
+        }
+      }
+      return(sql_params)
     }
   ),
 
@@ -424,7 +629,7 @@ CohortManifest <- R6::R6Class(
         data.frame(max_id = NA)
       })
       
-      max_id <- if (!is.na(max_id_result$max_id[1])) max_id_result$max_id[1] else 0
+      max_id <- ifelse(!is.na(max_id_result$max_id[1]), max_id_result$max_id[1], 0)
       next_id <- as.integer(max_id + 1)
       
       # Assign IDs: preserve existing ones, assign new ones
@@ -1011,15 +1216,185 @@ CohortManifest <- R6::R6Class(
       invisible(NULL)
     },
 
-    #' Generate cohorts in the database
+    #' Add a dependent cohort to the manifest
     #'
     #' @description
+    #' Adds a dependent CohortDef object (subset, union, or complement) to the manifest.
+    #' Only works for cohorts created with the builder functions in buildDependentCohorts.R.
+    #' Validates that parent cohorts exist in this manifest before adding.
+    #'
+    #' @param cohortDef A CohortDef object with cohortType of 'subset', 'union', or 'complement'
+    #'   (created via buildSubsetCohort_Temporal, buildUnionCohort, etc.)
+    #'
+    #' @details
+    #' The cohort is assigned a new ID equal to max(existing_id) + 1. Parent cohorts
+    #' (specified in dependsOnCohortIds) must already exist in this manifest.
+    #' The cohort is immediately persisted to the SQLite manifest database.
+    #'
+    #' @return Invisibly returns the assigned cohort ID.
+    addDependentCohort = function(cohortDef) {
+      checkmate::assert_class(x = cohortDef, classes = "CohortDef")
+
+      # Validate this is actually a dependent cohort (not a circe cohort)
+      cohort_type <- cohortDef$getCohortType()
+      if (cohort_type == "circe") {
+        cli::cli_abort("addDependentCohort only accepts dependent cohorts (subset, union, complement). Got type: {cohort_type}. Use loadCohortManifest() for circe cohorts.")
+      }
+
+      if (!cohort_type %in% c("subset", "union", "complement")) {
+        cli::cli_abort("Invalid cohort type: {cohort_type}. Must be 'subset', 'union', or 'complement'")
+      }
+
+      # Validate parent cohorts exist in this manifest
+      deps <- cohortDef$getDependencies()
+      parent_ids <- deps$cohort_ids
+
+      if (length(parent_ids) > 0) {
+        manifest_data <- self$getManifest()
+        existing_ids <- manifest_data$id
+
+        missing_ids <- setdiff(parent_ids, existing_ids)
+        if (length(missing_ids) > 0) {
+          cli::cli_abort(
+            "Cannot add dependent cohort '{cohortDef$label}' (type: {cohort_type}): \\
+            Parent cohort {ifelse(length(missing_ids) == 1, 'ID', 'IDs')} {paste(missing_ids, collapse = ', ')} \\
+            {ifelse(length(missing_ids) == 1, 'does', 'do')} not exist in this manifest"
+          )
+        }
+      }
+
+      # Get next ID by querying the database
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn), add = TRUE)
+
+      # Get the maximum ID currently in the database
+      max_id_result <- tryCatch(
+        {
+          DBI::dbGetQuery(conn, "SELECT MAX(id) as max_id FROM cohort_manifest")
+        },
+        error = function(e) {
+          data.frame(max_id = NA)
+        }
+      )
+
+      max_id <- ifelse(!is.na(max_id_result$max_id[1]), max_id_result$max_id[1], 0)
+      next_id <- as.integer(max_id + 1)
+
+      # Set the ID on the cohort object
+      cohortDef$setId(next_id)
+
+      # Insert into database
+      DBI::dbExecute(
+        conn,
+        "INSERT INTO cohort_manifest (id, label, tags, filePath, hash, timestamp, status) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'active')",
+        list(
+          next_id,
+          cohortDef$label,
+          cohortDef$formatTagsAsString(),
+          cohortDef$getFilePath(),
+          cohortDef$getHash()
+        )
+      )
+
+      # Add to in-memory manifest
+      private$.manifest[[length(private$.manifest) + 1]] <- cohortDef
+
+      cli::cli_alert_success("Added dependent cohort {next_id}: {cohortDef$label} (Type: {cohort_type})")
+      cli::cli_alert_info("Depends on cohort(s): {paste(parent_ids, collapse = ', ')}")
+
+      invisible(next_id)
+    },
+
+    
+
+    #' Compute dependency hash for a dependent cohort
+    #'
+    #' Combines parent cohort hashes with the dependency rule parameters.
+    #' Used to detect if a dependent cohort needs regeneration when parents change.
+    #'
+    #' @param cohort CohortDef object
+    #' @param parent_hashes List of parent cohort hashes keyed by cohort ID
+    #'
+    #' @return Character string (MD5 hash) of the dependency specification
+    compute_dependency_hash = function(cohort, parent_hashes) {
+      deps <- cohort$getDependencies()
+      parent_ids <- deps$cohort_ids
+      rule <- deps$rule
+
+      # Combine parent hashes in dependency order
+      parent_hash_strs <- character()
+      for (pid in parent_ids) {
+        pid_str <- as.character(pid)
+        if (pid_str %in% names(parent_hashes)) {
+          parent_hash_strs <- c(parent_hash_strs, parent_hashes[[pid_str]])
+        }
+      }
+
+      # Serialize the rule (dependency parameters)
+      rule_json <- jsonlite::toJSON(rule, auto_unbox = TRUE)
+
+      # Combine: parent hashes + rule parameters
+      combined <- paste0(
+        paste(parent_hash_strs, collapse = "|"),
+        "|",
+        rule_json
+      )
+      md5Hash <- rlang::hash(combined)
+
+      # Return MD5 hash
+      return(md5Hash)
+    },
+
+    #' Load metadata JSON for a dependent cohort
+    #'
+    #' Reads the metadata JSON file associated with a dependent cohort
+    #' and returns the parameterization for SQL rendering.
+    #'
+    #' @param cohortFilePath Character. Path to the SQL file for the cohort.
+    #'
+    #' @return List containing metadata parameters for SqlRender
+    load_metadata_for_cohort = function(cohortFilePath) {
+      # Replace .sql extension with .json
+      metadata_path <- gsub("\\.sql$", ".json", cohortFilePath)
+
+      if (!file.exists(metadata_path)) {
+        cli::cli_alert_warning("Metadata file not found: {metadata_path}")
+        return(list())
+      }
+
+      # Read and parse JSON
+      metadata_json <- readr::read_file(metadata_path)
+      tryCatch(
+        {
+          metadata <- jsonlite::fromJSON(metadata_json)
+          return(metadata)
+        },
+        error = function(e) {
+          cli::cli_alert_warning("Failed to parse metadata JSON: {e$message}")
+          return(list())
+        }
+      )
+    },
+
+    #' @description
     #' Generates cohorts in the manifest in the target database using the execution settings.
+    #' Checks dependency ordering and regenerates dependent cohorts when parents change.
     #' Checks the hash of each cohort definition and skips generation if the hash matches what's
     #' already stored in the cohort_checksum table. If hashes differ or the cohort is not yet in
     #' the checksum table, regenerates and updates the hash.
     #'
     #' @details
+    #' Execution flow:
+    #' 1. Build dependency graph from all CohortDef objects
+    #' 2. Validate no circular dependencies (error if found)
+    #' 3. Topologically sort cohorts by dependencies (parents before children)
+    #' 4. For each cohort in topological order:
+    #'    - circe cohorts: check SQL hash (existing logic)
+    #'    - dependent cohorts: compute dependency hash from parent hashes + rule
+    #' 5. Render and execute SQL (circe uses SqlRender parameters, dependent uses metadata JSON)
+    #' 6. Record checksums and dependency hashes in database
+    #' 7. Report results with cohort_type, depends_on, dependency_status columns
+    #'
     #' Requires that executionSettings has been set and includes:
     #' - A database connection (via getConnection())
     #' - cdmDatabaseSchema (where the OMOP CDM data resides)
@@ -1027,7 +1402,14 @@ CohortManifest <- R6::R6Class(
     #' - cohortTable (destination table name)
     #' - tempEmulationSchema if needed for the database platform
     #'
-    #' @return Data frame with execution results including cohort_id, label, execution_time_min, and status
+    #' @return Data frame with execution results including:
+    #'   - cohort_id: ID of the generated cohort
+    #'   - label: Label of the cohort
+    #'   - cohort_type: 'circe', 'subset', 'union', or 'complement'
+    #'   - depends_on: Comma-separated parent cohort IDs (empty for circe cohorts)
+    #'   - execution_time_min: Time taken to generate (0 for skipped)
+    #'   - status: 'Success', 'Skipped - already generated', 'Dependency skipped', or error message
+    #'   - dependency_status: 'Not applicable' for circe, 'Parent changed' or 'Unchanged' for dependent
     generateCohorts = function() {
       # Validate execution settings are available
       private$validateExecutionSettings()
@@ -1071,14 +1453,33 @@ CohortManifest <- R6::R6Class(
       cli::cli_alert_info("Cohort Table: {cohort_table}")
       cli::cli_alert_info("Generating {length(private$.manifest)} cohorts...\n")
 
-      # Initialize results data frame
+      # === PHASE 1: DEPENDENCY GRAPH BUILDING & VALIDATION ===
+
+      # Build dependency graph
+      dependency_graph <- private$build_dependency_graph()
+
+      # Validate no circular dependencies
+      private$validate_no_cycles(dependency_graph)
+
+      # Get topological sort (execution order: parents before children)
+      sorted_cohort_ids <- private$topological_sort(dependency_graph)
+
+      cli::cli_alert_info("Execution order determined by dependencies")
+
+      # Initialize results data frame with enhanced columns
       results_df <- data.frame(
         cohort_id = integer(),
         label = character(),
+        cohort_type = character(),
+        depends_on = character(),
         execution_time_min = numeric(),
         status = character(),
+        dependency_status = character(),
         stringsAsFactors = FALSE
       )
+
+      # Cache for storing hashes of each cohort (used for computing dependency hashes)
+      cohort_hashes <- list()
 
       # Check if checksum table is empty
       checksum_query <- paste0("SELECT COUNT(*) as count FROM ", cohort_schema, ".", checksum_table)
@@ -1086,16 +1487,36 @@ CohortManifest <- R6::R6Class(
       is_checksum_empty <- inherits(checksum_count_result, "try-error") || 
                            (nrow(checksum_count_result) > 0 && checksum_count_result$COUNT[1] == 0)
 
-      # Generate each cohort
-      for (i in seq_along(private$.manifest)) {
-        cohort <- private$.manifest[[i]]
-        cohort_id <- cohort$getId()
+      # === PHASE 2-4: EXECUTE COHORTS IN DEPENDENCY ORDER ===
+
+      # Generate each cohort in topological order
+      for (idx in seq_along(sorted_cohort_ids)) {
+        # Find cohort by ID
+        cohort_id <- sorted_cohort_ids[idx]
+        cohort <- NULL
+        for (ch in private$.manifest) {
+          if (ch$getId() == cohort_id) {
+            cohort <- ch
+            break
+          }
+        }
+
+        if (is.null(cohort)) {
+          cli::cli_alert_danger("Cohort {cohort_id} not found in manifest")
+          next
+        }
+
         cohort_label <- cohort$label
-        current_hash <- cohort$getHash()
+        cohort_type <- cohort$getCohortType()
+        deps <- cohort$getDependencies()
+        parent_ids <- deps$cohort_ids
+        depends_on_str <- ifelse(length(parent_ids) > 0, paste(parent_ids, collapse = ", "), "")
 
         # Check if we should skip this cohort based on hash
         should_skip <- FALSE
         stored_hash <- NULL
+        dependency_hash_changed <- FALSE
+        stored_dependency_hash <- NULL
 
         if (!is_checksum_empty) {
           # Query the stored hash for this cohort
@@ -1107,34 +1528,68 @@ CohortManifest <- R6::R6Class(
 
           if (!inherits(hash_result, "try-error") && nrow(hash_result) > 0) {
             stored_hash <- hash_result$CHECKSUM[1]
-            if (!is.na(stored_hash) && stored_hash == current_hash) {
+          }
+        }
+
+        # For dependent cohorts, also check dependency hash
+        dependency_status <- "Not applicable"
+        if (cohort_type != "circe") {
+          # Compute dependency hash using cached parent hashes
+          current_dependency_hash <- private$compute_dependency_hash(cohort, cohort_hashes)
+
+          if (!is_checksum_empty && !is.null(stored_hash)) {
+            # Check if dependency hash is available
+            stored_dependency_hash <- stored_hash  # For now, store both as one; could extend DB schema
+            if (!is.na(stored_dependency_hash) && stored_dependency_hash == current_dependency_hash) {
+              dependency_status <- "Unchanged"
               should_skip <- TRUE
+            } else {
+              dependency_status <- "Parent changed"
             }
+          } else {
+            dependency_status <- "New"
+          }
+        } else {
+          # For circe cohorts, use standard SQL hash
+          current_hash <- cohort$getHash()
+          if (!is.null(stored_hash) && !is.na(stored_hash) && stored_hash == current_hash) {
+            should_skip <- TRUE
           }
         }
 
         # Log decision
         if (should_skip) {
-          cli::cli_alert_info("Skipping cohort {cohort_id}: {cohort_label} (hash unchanged)")
+          cli::cli_alert_info("Skipping cohort {cohort_id}: {cohort_label} ({cohort_type})")
           results_df <- rbind(results_df, data.frame(
             cohort_id = cohort_id,
             label = cohort_label,
+            cohort_type = cohort_type,
+            depends_on = depends_on_str,
             execution_time_min = 0,
             status = "Skipped - already generated",
+            dependency_status = dependency_status,
             stringsAsFactors = FALSE
           ))
+          
+          # Cache this cohort's hash for dependency calculations
+          if (cohort_type == "circe") {
+            cohort_hashes[[as.character(cohort_id)]] <- cohort$getHash()
+          } else {
+            cohort_hashes[[as.character(cohort_id)]] <- private$compute_dependency_hash(cohort, cohort_hashes)
+          }
+
           next
         }
 
         # Generate the cohort
-        cli::cli_alert_info("Generating cohort {cohort_id}: {cohort_label}...")
+        cli::cli_alert_info("Generating cohort {cohort_id}: {cohort_label} ({cohort_type})...")
 
         # Get the SQL from the cohortDef class
         cohort_sql <- cohort$getSql()
+        cohort_file_path <- cohort$getFilePath()
 
-        # Render the SQL with required parameters
-        rendered_sql <- SqlRender::render(
-          sql = cohort_sql,
+        # Prepare SQL rendering parameters
+        sql_params <- list(
           cdm_database_schema = cdm_schema,
           vocabulary_database_schema = cdm_schema,
           target_database_schema = cohort_schema,
@@ -1147,6 +1602,36 @@ CohortManifest <- R6::R6Class(
           results_database_schema.cohort_censor_stats = paste(cohort_schema, table_names$cohortCensorStatsTable, sep = "."),
           warnOnMissingParameters = FALSE
         )
+
+        # For dependent cohorts, load metadata and add to parameters
+        if (cohort_type != "circe") {
+          metadata <- private$load_metadata_for_cohort(cohort_file_path)
+
+          if (length(metadata) > 0) {
+            field_mapping <- list(
+              baseCohortId = "base_cohort_id",
+              filterCohortId = "filter_cohort_id",
+              temporalOperator = "temporal_operator",
+              temporalStartOffset = "temporal_start_offset",
+              temporalEndOffset = "temporal_end_offset",
+              minAge = "min_age",
+              maxAge = "max_age",
+              genderConceptIds = "gender_concept_ids",
+              raceConceptIds = "race_concept_ids",
+              ethnicityConceptIds = "ethnicity_concept_ids",
+              cohortIds = "cohort_ids",
+              unionRule = "union_rule",
+              atLeastN = "at_least_n",
+              populationCohortId = "population_cohort_id",
+              excludeCohortIds = "exclude_cohort_ids",
+              complementType = "complement_type"
+            )
+            sql_params <- private$expand_metadata_parameters(metadata, sql_params, field_mapping)
+          }
+        }
+
+        # Render the SQL with all parameters
+        rendered_sql <- do.call(SqlRender::render, c(list(sql = cohort_sql), sql_params))
 
         # Translate to target dialect
         translated_sql <- SqlRender::translate(
@@ -1179,22 +1664,39 @@ CohortManifest <- R6::R6Class(
           results_df <- rbind(results_df, data.frame(
             cohort_id = cohort_id,
             label = cohort_label,
+            cohort_type = cohort_type,
+            depends_on = depends_on_str,
             execution_time_min = execution_time_min,
             status = paste("Error:", error_msg),
+            dependency_status = dependency_status,
             stringsAsFactors = FALSE
           ))
 
-          # Add "Not generated" for remaining cohorts
-          if (i < length(private$.manifest)) {
-            for (j in (i + 1):length(private$.manifest)) {
-              remaining_cohort <- private$.manifest[[j]]
-              results_df <- rbind(results_df, data.frame(
-                cohort_id = remaining_cohort$getId(),
-                label = remaining_cohort$label,
-                execution_time_min = NA_real_,
-                status = "Not generated",
-                stringsAsFactors = FALSE
-              ))
+          # Add "Not generated" for remaining cohorts (due to cascade failure or skipped dependents)
+          if (idx < length(sorted_cohort_ids)) {
+            for (j in (idx + 1):length(sorted_cohort_ids)) {
+              remaining_cohort_id <- sorted_cohort_ids[j]
+              remaining_cohort <- NULL
+              for (ch in private$.manifest) {
+                if (ch$getId() == remaining_cohort_id) {
+                  remaining_cohort <- ch
+                  break
+                }
+              }
+              if (!is.null(remaining_cohort)) {
+                remaining_deps <- remaining_cohort$getDependencies()
+                remaining_deps_str <- ifelse(length(remaining_deps$cohort_ids) > 0, paste(remaining_deps$cohort_ids, collapse = ", "), "")
+                results_df <- rbind(results_df, data.frame(
+                  cohort_id = remaining_cohort_id,
+                  label = remaining_cohort$label,
+                  cohort_type = remaining_cohort$getCohortType(),
+                  depends_on = remaining_deps_str,
+                  execution_time_min = NA_real_,
+                  status = "Not generated",
+                  dependency_status = "Not applicable",
+                  stringsAsFactors = FALSE
+                ))
+              }
             }
           }
 
@@ -1206,12 +1708,19 @@ CohortManifest <- R6::R6Class(
         end_time <- Sys.time()
         execution_time_min <- as.numeric(difftime(end_time, start_time, units = "mins"))
 
+        # Determine hash to store (depends on cohort type)
+        if (cohort_type == "circe") {
+          hash_to_store <- cohort$getHash()
+        } else {
+          hash_to_store <- private$compute_dependency_hash(cohort, cohort_hashes)
+        }
+
         # Update or insert checksum
         if (is.null(stored_hash)) {
           # Insert new checksum record
           checksum_data <- data.frame(
             cohort_definition_id = cohort_id,
-            checksum = current_hash,
+            checksum = hash_to_store,
             start_time = NA_real_,
             end_time = as.numeric(difftime(Sys.time(), start_time, units = "secs")),
             stringsAsFactors = FALSE
@@ -1232,7 +1741,7 @@ CohortManifest <- R6::R6Class(
           # Update existing checksum record
           update_sql <- paste0(
             "UPDATE ", cohort_schema, ".", checksum_table,
-            " SET checksum = '", current_hash, "', ",
+            " SET checksum = '", hash_to_store, "', ",
             "end_time = ", as.numeric(difftime(Sys.time(), start_time, units = "secs")), " ",
             "WHERE cohort_definition_id = ", cohort_id
           )
@@ -1248,22 +1757,37 @@ CohortManifest <- R6::R6Class(
           }, silent = FALSE)
         }
 
-        cli::cli_alert_success("Generated cohort {cohort_id}: {cohort_label} ({execution_time_min |> round(2)} min)")
+        cli::cli_alert_success("Generated cohort {cohort_id}: {cohort_label} ({cohort_type}) ({execution_time_min |> round(2)} min)")
+
+        # Cache this cohort's hash for dependency calculations
+        cohort_hashes[[as.character(cohort_id)]] <- hash_to_store
 
         results_df <- rbind(results_df, data.frame(
           cohort_id = cohort_id,
           label = cohort_label,
+          cohort_type = cohort_type,
+          depends_on = depends_on_str,
           execution_time_min = execution_time_min,
           status = "Success",
+          dependency_status = dependency_status,
           stringsAsFactors = FALSE
         ))
       }
+
+      # === PHASE 5: RESULTS REPORTING ===
 
       cli::cli_rule()
       total_time_min <- sum(results_df$execution_time_min[results_df$status == "Success"], na.rm = TRUE)
       successful <- sum(results_df$status == "Success")
       skipped <- sum(results_df$status == "Skipped - already generated")
       failed <- sum(grepl("Error:", results_df$status))
+      
+      # Report by cohort type
+      if ("cohort_type" %in% names(results_df)) {
+        circe_count <- sum(results_df$cohort_type == "circe", na.rm = TRUE)
+        dependent_count <- sum(results_df$cohort_type %in% c("subset", "union", "complement"), na.rm = TRUE)
+        cli::cli_alert_info("Cohort types: {circe_count} circe + {dependent_count} dependent")
+      }
 
       cli::cli_alert_success("Cohort generation complete")
       cli::cli_alert_info("Total cohorts: {nrow(results_df)} | Successful: {successful} | Skipped: {skipped} | Failed: {failed}")
@@ -1480,9 +2004,9 @@ CohortManifest <- R6::R6Class(
           "SELECT label FROM cohort_manifest WHERE id = ?",
           list(id)
         )
-        label <- if (nrow(label_result) > 0) label_result$label[1] else "Unknown"
+        label <- ifelse(nrow(label_result) > 0, label_result$label[1], "Unknown")
         
-        reason_msg <- if (!is.null(reason)) glue::glue(" ({reason})") else ""
+        reason_msg <- ifelse(!is.null(reason), glue::glue(" ({reason})"), "")
         cli::cli_alert_success("Deleted cohort {id}: {label}{reason_msg}")
         return(invisible(TRUE))
       }, error = function(e) {
@@ -1565,7 +2089,7 @@ CohortManifest <- R6::R6Class(
         }
       }
       
-      cleanup_method <- if (keep_trace) "soft deleted (with trace)" else "hard deleted (permanently)"
+      cleanup_method <- ifelse(keep_trace, "soft deleted (with trace)", "hard deleted (permanently)")
       cli::cli_alert_success("Cleanup complete: {nrow(missing_cohorts)} cohort(s) {cleanup_method}")
       
       return(invisible(NULL))
