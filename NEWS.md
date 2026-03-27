@@ -48,13 +48,6 @@
 - ATLAS connection setup
 - Contributor and team management
 
-### Development & Maintenance
-- Roxygen2-based documentation system
-- Automated package maintenance tools
-- pkgdown reference generation and updates
-- Documentation validation framework
-- Environment snapshots and restoration
-
 ### Utilities
 - Repository validation framework
 - Task history and execution tracking
@@ -62,13 +55,3 @@
 - File and directory management utilities
 - Archive and export functionality
 
-## Known Limitations
-- Database testing requires live database connection
-- Pandoc required for full documentation building
-- DBMS-specific syntax support varies by platform
-
-## Future Roadmap
-- Enhanced validation rules for cohort definitions
-- Expanded data quality checks
-- Additional visualization tools
-- Cloud-based repository options

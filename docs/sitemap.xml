@@ -4,6 +4,15 @@
     <loc>https://ohdsi.github.io/picard/404.html</loc>
   </url>
   <url>
+    <loc>https://ohdsi.github.io/picard/articles/cohorts.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/getting-started.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/index.html</loc>
+  </url>
+  <url>
     <loc>https://ohdsi.github.io/picard/authors.html</loc>
   </url>
   <url>
@@ -14,9 +23,6 @@
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/news/index.html</loc>
-  </url>
-  <url>
-    <loc>https://ohdsi.github.io/picard/PKGDOWN_SETUP.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/agentSaveWork.html</loc>
