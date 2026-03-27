@@ -3,14 +3,14 @@
 -- Example: Patients with CKD who had a T2D diagnosis in the prior year
 --
 -- Parameters:
---   @base_cohort_id: The cohort definition ID to subset (e.g., CKD)
---   @filter_cohort_id: The cohort definition ID to use for temporal filtering (e.g., T2D)
---   @temporal_operator: 'during', 'before', 'after', 'overlapping'
---   @temporal_start_offset: Start of window relative to base cohort event (negative = before, 0 = on date)
---   @temporal_end_offset: End of window relative to base cohort event (negative = before, 0 = on date)
---   @output_cohort_id: The new cohort definition ID for the subset
---   @output_table: Schema.table to insert results into
---   @base_cohort_table: Schema.table containing the base cohort
+--   base_cohort_id: The cohort definition ID to subset (e.g., CKD)
+--   filter_cohort_id: The cohort definition ID to use for temporal filtering (e.g., T2D)
+--   temporal_operator: 'during', 'before', 'after', 'overlapping'
+--   temporal_start_offset: Start of window relative to base cohort event (negative = before, 0 = on date)
+--   temporal_end_offset: End of window relative to base cohort event (negative = before, 0 = on date)
+--   output_cohort_id: The new cohort definition ID for the subset
+--   output_table: Schema.table to insert results into
+--   base_cohort_table: Schema.table containing the base cohort
 
 {DEFAULT @temporal_operator = 'during'}
 {DEFAULT @temporal_start_offset = 0}

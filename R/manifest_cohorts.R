@@ -72,75 +72,92 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
     conn <- DBI::dbConnect(RSQLite::SQLite(), dbPath)
     on.exit(DBI::dbDisconnect(conn))
 
-    # Query existing cohorts from database
-    existing_cohorts <- DBI::dbGetQuery(
-      conn,
-      "SELECT id, label, tags, filePath, hash FROM cohort_manifest"
-    )
-
-    # Only load from manifest if it has entries
-    if (nrow(existing_cohorts) > 0) {
+    # Check if cohort_manifest table exists
+    table_exists <- DBI::dbExistsTable(conn, "cohort_manifest")
+    
+    if (!table_exists) {
       if (verbose) {
-        cli::cli_alert_info("Loading cohorts from existing manifest: {dbPath}")
+        cli::cli_alert_warning("Database exists but cohort_manifest table not found. Scanning directories...")
       }
-
-      # Process each cohort from database
-      for (i in seq_len(nrow(existing_cohorts))) {
-        record <- existing_cohorts[i, ]
-        file_path <- record$filePath
-        stored_hash <- record$hash
-        tags_string <- record$tags
-        cohort_id <- record$id
-
-        # Check if file still exists
-        if (!file.exists(file_path)) {
-          if (verbose) {
-            cli::cli_alert_warning("Cohort file missing (will be marked): {record$label} ({file_path})")
-          }
-          # Don't skip - we'll track this in the database with status='missing'
-          # For now, skip it from loading into memory but it will be in the database
-          next
-        }
-
-        tryCatch({
-          # Create CohortDef from file (this computes current hash)
-          cohort_entry <- CohortDef$new(
-            label = record$label,
-            tags = list(),
-            filePath = file_path
-          )
-
-          # Set the ID from the database to preserve it
-          cohort_entry$setId(as.integer(cohort_id))
-
-          # Backfill tags from database
-          if (!is.na(tags_string) && tags_string != "") {
-            parsed_tags <- parseTagsString(tags_string)
-            cohort_entry$tags <- parsed_tags
-          }
-
-          cohort_entries[[length(cohort_entries) + 1]] <- cohort_entry
-        }, error = function(e) {
-          cli::cli_alert_danger("Error loading cohort {record$label}: {e$message}")
-        })
-      }
-
-      if (length(cohort_entries) > 0) {
-        if (verbose) {
-          cli::cli_alert_success("Loaded {length(cohort_entries)} cohorts from manifest")
-        }
-        # Successfully loaded from manifest, proceed to create and return
-      } else {
-        # Database had entries but none could be loaded, fall through to scan directories
-        if (verbose) {
-          cli::cli_alert_warning("No valid cohorts could be loaded from manifest. Scanning directories...")
-        }
-        cohort_entries <- list()  # Reset to empty for directory scan
-      }
+      # Fall through to directory scanning
+      DBI::dbDisconnect(conn)
     } else {
-      # Manifest exists but is empty, scan directories
-      if (verbose) {
-        cli::cli_alert_warning("Manifest exists but contains no cohort entries. Scanning directories...")
+      # Query existing cohorts from database
+      existing_cohorts <- DBI::dbGetQuery(
+        conn,
+        "SELECT id, label, tags, filePath, hash, cohortType FROM cohort_manifest"
+      )
+
+      # Only load from manifest if it has entries
+      if (nrow(existing_cohorts) > 0) {
+        if (verbose) {
+          cli::cli_alert_info("Loading cohorts from existing manifest: {dbPath}")
+        }
+
+        # Process each cohort from database
+        for (i in seq_len(nrow(existing_cohorts))) {
+          record <- existing_cohorts[i, ]
+          file_path <- record$filePath
+          stored_hash <- record$hash
+          tags_string <- record$tags
+          cohort_id <- record$id
+          cohort_type <- record$cohortType
+
+          # Check if file still exists
+          if (!file.exists(file_path)) {
+            if (verbose) {
+              cli::cli_alert_warning("Cohort file missing (will be marked): {record$label} ({file_path})")
+            }
+            # Don't skip - we'll track this in the database with status='missing'
+            # For now, skip it from loading into memory but it will be in the database
+            next
+          }
+
+          tryCatch({
+            # Create CohortDef from file (this computes current hash)
+            cohort_entry <- CohortDef$new(
+              label = record$label,
+              tags = list(),
+              filePath = file_path
+            )
+
+            # Set the ID from the database to preserve it
+            cohort_entry$setId(as.integer(cohort_id))
+
+            # Restore cohortType from database
+            if (!is.na(cohort_type)) {
+              cohort_entry$setCohortType(cohort_type)
+            }
+
+            # Backfill tags from database
+            if (!is.na(tags_string) && tags_string != "") {
+              parsed_tags <- parseTagsString(tags_string)
+              cohort_entry$tags <- parsed_tags
+            }
+
+            cohort_entries[[length(cohort_entries) + 1]] <- cohort_entry
+          }, error = function(e) {
+            cli::cli_alert_danger("Error loading cohort {record$label}: {e$message}")
+          })
+        }
+
+        if (length(cohort_entries) > 0) {
+          if (verbose) {
+            cli::cli_alert_success("Loaded {length(cohort_entries)} cohorts from manifest")
+          }
+          # Successfully loaded from manifest, proceed to create and return
+        } else {
+          # Database had entries but none could be loaded, fall through to scan directories
+          if (verbose) {
+            cli::cli_alert_warning("No valid cohorts could be loaded from manifest. Scanning directories...")
+          }
+          cohort_entries <- list()  # Reset to empty for directory scan
+        }
+      } else {
+        # Manifest exists but is empty, scan directories
+        if (verbose) {
+          cli::cli_alert_warning("Manifest exists but contains no cohort entries. Scanning directories...")
+        }
       }
     }
   }
@@ -283,29 +300,6 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
     executionSettings = executionSettings,
     dbPath = dbPath
   )
-
-  # Detect and alert about missing cohorts
-  if (verbose) {
-    missing_cohorts <- manifest$private$.detect_missing_cohorts()
-    
-    if (!is.null(missing_cohorts) && length(missing_cohorts) > 0) {
-      cli::cli_rule("Missing Cohort Files Detected")
-      cli::cli_alert_warning("{length(missing_cohorts)} cohort file(s) are missing:")
-      
-      for (cohort_info in missing_cohorts) {
-        cli::cli_bullets(c(
-          "✗" = "ID {cohort_info$id}: {cohort_info$label} ({cohort_info$filePath})"
-        ))
-      }
-      
-      cli::cli_rule()
-      cli::cli_bullets(c(
-        i = "Use {.code manifest$validateManifest()} to see full status",
-        i = "Use {.code manifest$cleanupMissing()} to remove missing cohorts",
-        i = "Or restore the missing files and reload"
-      ))
-    }
-  }
 
   return(manifest)
 }
@@ -926,8 +920,8 @@ visualizeCohortDependencies <- function(manifest, outputPath = NULL) {
   checkmate::assert_r6(manifest, classes = "CohortManifest")
   checkmate::assert_character(outputPath, len = 1, null.ok = TRUE)
   
-  # Access the private manifest list
-  cohort_list <- manifest$private$.manifest
+  # Get the list of R6 CohortDef objects from the manifest
+  cohort_list <- manifest$getManifest()
   
   if (length(cohort_list) == 0) {
     cli::cli_alert_warning("No cohorts found in manifest")

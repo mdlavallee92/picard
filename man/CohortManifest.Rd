@@ -16,6 +16,9 @@ The CohortManifest class manages multiple cohort definitions and stores their
 metadata in a SQLite database located at inputs/cohorts/cohortManifest.sqlite.
 Each CohortDef is assigned a sequential ID based on its position in the manifest.
 
+Returns a tabular view of the manifest from the database, suitable for
+viewing, filtering, and reporting. Columns include: id, label, tags, filePath, hash, timestamp.
+
 Requires that executionSettings has been set and includes:
 \itemize{
 \item A database connection (via getConnection())
@@ -64,6 +67,7 @@ Requires that executionSettings has been set and includes:
 \itemize{
 \item \href{#method-CohortManifest-new}{\code{CohortManifest$new()}}
 \item \href{#method-CohortManifest-getManifest}{\code{CohortManifest$getManifest()}}
+\item \href{#method-CohortManifest-tabulateManifest}{\code{CohortManifest$tabulateManifest()}}
 \item \href{#method-CohortManifest-getDbPath}{\code{CohortManifest$getDbPath()}}
 \item \href{#method-CohortManifest-getExecutionSettings}{\code{CohortManifest$getExecutionSettings()}}
 \item \href{#method-CohortManifest-setExecutionSettings}{\code{CohortManifest$setExecutionSettings()}}
@@ -77,8 +81,6 @@ Requires that executionSettings has been set and includes:
 \item \href{#method-CohortManifest-createCohortTables}{\code{CohortManifest$createCohortTables()}}
 \item \href{#method-CohortManifest-dropCohortTables}{\code{CohortManifest$dropCohortTables()}}
 \item \href{#method-CohortManifest-addDependentCohort}{\code{CohortManifest$addDependentCohort()}}
-\item \href{#method-CohortManifest-compute_dependency_hash}{\code{CohortManifest$compute_dependency_hash()}}
-\item \href{#method-CohortManifest-load_metadata_for_cohort}{\code{CohortManifest$load_metadata_for_cohort()}}
 \item \href{#method-CohortManifest-generateCohorts}{\code{CohortManifest$generateCohorts()}}
 \item \href{#method-CohortManifest-retrieveCohortCounts}{\code{CohortManifest$retrieveCohortCounts()}}
 \item \href{#method-CohortManifest-validateManifest}{\code{CohortManifest$validateManifest()}}
@@ -113,7 +115,7 @@ via setExecutionSettings(). Defaults to NULL for read-only mode.}
 
 \item{\code{dbPath}}{Character. Path to the SQLite database. Defaults to
 "inputs/cohorts/cohortManifest.sqlite"
-Get the manifest as a data frame}
+Get the manifest as a list of CohortDef objects}
 }
 \if{html}{\out{</div>}}
 }
@@ -127,7 +129,20 @@ Get the manifest as a data frame}
 }
 
 \subsection{Returns}{
-Data frame. The manifest with id, label, tags, filePath, hash, and timestamp columns.
+List. A list of CohortDef objects in the manifest, indexed by cohort ID.
+Tabulate the manifest as a data frame
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-tabulateManifest"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-tabulateManifest}{}}}
+\subsection{Method \code{tabulateManifest()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$tabulateManifest()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+Data frame. Manifest data with columns: id, label, tags, filePath, hash, timestamp
 Get the manifest path
 }
 }
@@ -373,54 +388,6 @@ Validates that parent cohorts exist in this manifest before adding.
 }
 \subsection{Returns}{
 Invisibly returns the assigned cohort ID.
-Compute dependency hash for a dependent cohort
-
-Combines parent cohort hashes with the dependency rule parameters.
-Used to detect if a dependent cohort needs regeneration when parents change.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-compute_dependency_hash"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-compute_dependency_hash}{}}}
-\subsection{Method \code{compute_dependency_hash()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$compute_dependency_hash(cohort, parent_hashes)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{cohort}}{CohortDef object}
-
-\item{\code{parent_hashes}}{List of parent cohort hashes keyed by cohort ID}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-Character string (MD5 hash) of the dependency specification
-Load metadata JSON for a dependent cohort
-
-Reads the metadata JSON file associated with a dependent cohort
-and returns the parameterization for SQL rendering.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-load_metadata_for_cohort"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-load_metadata_for_cohort}{}}}
-\subsection{Method \code{load_metadata_for_cohort()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$load_metadata_for_cohort(cohortFilePath)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{cohortFilePath}}{Character. Path to the SQL file for the cohort.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-List containing metadata parameters for SqlRender
 }
 }
 \if{html}{\out{<hr>}}

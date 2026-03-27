@@ -51,7 +51,7 @@ buildSubsetCohortTemporal <- function(
     )
   } else {
     # Validate base cohorts exist in manifest
-    manifest_ids <- manifest$getManifest()$id
+    manifest_ids <- manifest$tabulateManifest()$id
     if (!baseCohortId %in% manifest_ids) {
       cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
     }
@@ -190,7 +190,7 @@ buildSubsetCohortDemographic <- function(
     )
   } else {
     # Validate base cohort exists in manifest
-    manifest_ids <- manifest$getManifest()$id
+    manifest_ids <- manifest$tabulateManifest()$id
     if (!baseCohortId %in% manifest_ids) {
       cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
     }
@@ -207,8 +207,19 @@ buildSubsetCohortDemographic <- function(
     dir.create(subset_dir, recursive = TRUE, showWarnings = FALSE)
   }
 
-  # Generate file names
-  file_name <- sprintf("subset_demo_cohort_%d", baseCohortId)
+  # Generate unique hash from demographic parameters
+  params_for_hash <- list(
+    minAge = minAge,
+    maxAge = maxAge,
+    genderConceptIds = genderConceptIds,
+    raceConceptIds = raceConceptIds,
+    ethnicityConceptIds = ethnicityConceptIds
+  )
+  params_json <- jsonlite::toJSON(params_for_hash, auto_unbox = TRUE)
+  params_hash <- substr(rlang::hash(params_json), 1, 8)
+
+  # Generate file names with hash to ensure uniqueness
+  file_name <- sprintf("subset_demo_cohort_%d_%s", baseCohortId, params_hash)
   sql_path <- file.path(subset_dir, paste0(file_name, ".sql"))
   metadata_path <- file.path(subset_dir, paste0(file_name, ".json"))
 
@@ -220,16 +231,17 @@ buildSubsetCohortDemographic <- function(
   )
   template_sql <- readr::read_file(template_path)
 
-  # Prepare metadata
+  # Prepare metadata - convert NULLs to empty strings for SqlRender template conditions
+  # SqlRender checks {@param != ''} so empty strings will work correctly
   metadata <- list(
     type = "subset_demographic",
     label = label,
     baseCohortId = baseCohortId,
-    minAge = minAge,
-    maxAge = maxAge,
-    genderConceptIds = genderConceptIds,
-    raceConceptIds = raceConceptIds,
-    ethnicityConceptIds = ethnicityConceptIds,
+    minAge = ifelse(is.null(minAge), "", minAge),
+    maxAge = ifelse(is.null(maxAge), "", maxAge),
+    genderConceptIds = ifelse(is.null(genderConceptIds) || length(genderConceptIds) == 0, "", ifelse(length(genderConceptIds) == 1, as.character(genderConceptIds[1]), paste(genderConceptIds, collapse = ","))),
+    raceConceptIds = ifelse(is.null(raceConceptIds) || length(raceConceptIds) == 0, "", ifelse(length(raceConceptIds) == 1, as.character(raceConceptIds[1]), paste(raceConceptIds, collapse = ","))),
+    ethnicityConceptIds = ifelse(is.null(ethnicityConceptIds) || length(ethnicityConceptIds) == 0, "", ifelse(length(ethnicityConceptIds) == 1, as.character(ethnicityConceptIds[1]), paste(ethnicityConceptIds, collapse = ","))),
     createdAt = Sys.time(),
     dependsOnCohortIds = c(baseCohortId)
   )
@@ -249,8 +261,8 @@ buildSubsetCohortDemographic <- function(
     tags = list(
       type = "subset_demographic",
       baseCohortId = as.character(baseCohortId),
-      minAge = if (!is.null(minAge)) as.character(minAge) else "NA",
-      maxAge = if (!is.null(maxAge)) as.character(maxAge) else "NA"
+      minAge = ifelse(!is.null(minAge), as.character(minAge), "NA"),
+      maxAge = ifelse(!is.null(maxAge), as.character(maxAge), "NA")
     ),
     filePath = sql_path
   )
@@ -322,7 +334,7 @@ buildUnionCohort <- function(
     )
   } else {
     # Validate all input cohorts exist in manifest
-    manifest_ids <- manifest$getManifest()$id
+    manifest_ids <- manifest$tabulateManifest()$id
     missing_ids <- setdiff(cohortIds, manifest_ids)
     if (length(missing_ids) > 0) {
       cli::cli_abort("Input cohort {if (length(missing_ids) == 1) 'ID' else 'IDs'} {paste(missing_ids, collapse = ', ')} not found in manifest")
@@ -455,7 +467,7 @@ buildComplementCohort <- function(
     )
   } else {
     # Validate population and exclude cohorts exist in manifest
-    manifest_ids <- manifest$getManifest()$id
+    manifest_ids <- manifest$tabulateManifest()$id
     
     if (!populationCohortId %in% manifest_ids) {
       cli::cli_abort("Population cohort ID {populationCohortId} not found in manifest")
