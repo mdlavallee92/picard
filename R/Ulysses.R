@@ -10,10 +10,48 @@
   invisible(private)
 }
 
-# Study Options Class -------------
+#' UlyssesStudy R6 Class
+#'
+#' @description
+#' Configuration and initialization class for Ulysses study repositories.
+#' This class manages the creation and setup of a new study repository,
+#' including directory structure, configuration files, and version control initialization.
+#'
+#' @details
+#' UlyssesStudy encapsulates the configuration needed to set up a new Ulysses-based
+#' study environment. It coordinates with StudyMeta and ExecOptions to provide
+#' comprehensive repository initialization.
+#'
+#' ## Active Fields
+#'
+#' - `repoName`: Study repository name (read/write)
+#' - `repoFolder`: Parent directory for the repository (read/write)
+#' - `toolType`: Tool type, either "dbms" or "external" (read/write)
+#' - `studyMeta`: StudyMeta object containing metadata (read/write)
+#' - `gitRemote`: Optional git remote URL (read/write)
+#' - `renvLock`: Optional path to renv lock file (read/write)
+#'
+#' ## Methods
+#'
+#' - `initialize()`: Create and configure a new UlyssesStudy instance
+#' - `initUlyssesRepo()`: Initialize the full repository structure
+#'
+#' @export
 UlyssesStudy <- R6::R6Class(
   classname = "UlyssesStudy",
   public = list(
+    #' @description
+    #' Initialize a new UlyssesStudy instance with configuration parameters.
+    #'
+    #' @param repoName Character string. Name of the study repository.
+    #' @param repoFolder Character string. Parent directory where the repository will be created.
+    #' @param toolType Character string. Tool type, either "dbms" or "external".
+    #' @param studyMeta StudyMeta object. Contains study metadata and configuration.
+    #' @param execOptions ExecOptions object. Contains execution settings and options.
+    #' @param gitRemote Character string. Optional URL for git remote repository.
+    #' @param renvLock Character string. Optional path to renv lock file for reproducibility.
+    #'
+    #' @return Invisibly returns self for method chaining.
     initialize = function(repoName,
                           repoFolder,
                           toolType = c("dbms", "external"),
@@ -43,6 +81,22 @@ UlyssesStudy <- R6::R6Class(
       private[[".renvLock"]] <- renvLock
     },
 
+    #' @description
+    #' Initialize the complete Ulysses repository structure and configuration.
+    #'
+    #' This method performs the following initialization steps:
+    #' 1. Creates the R project directory and Rproj file
+    #' 2. Establishes the standard directory structure
+    #' 3. Creates initialization files (README, NEWS, configuration files)
+    #' 4. Sets up Quarto documentation
+    #' 5. Creates main execution file
+    #' 6. Initializes agent skills configuration
+    #' 7. Initializes git repository
+    #'
+    #' @param verbose Logical. If TRUE (default), displays informative messages during initialization.
+    #' @param openProject Logical. If TRUE, opens the project in a new RStudio session after initialization.
+    #'
+    #' @return Invisibly returns the path to the initialized repository.
     initUlyssesRepo = function(verbose = TRUE, openProject = FALSE) {
       repoPath <- private$.getRepoPath()
       
@@ -289,16 +343,48 @@ UlyssesStudy <- R6::R6Class(
 
 # Sub options classes ------------
 
-# sub class for contributors in study meta
-# Contributor Line ---------------
+#' ContributorLine R6 Class
+#'
+#' @description
+#' Represents a contributor to a study with associated contact and role information.
+#' This class stores metadata about individuals contributing to a research study.
+#'
+#' @details
+#' ContributorLine encapsulates contributor information including name, email, and role.
+#' Used within StudyMeta to maintain a structured list of study contributors.
+#'
+#' ## Active Fields
+#'
+#' - `name`: Contributor's name (read/write)
+#' - `email`: Contributor's email address (read/write)
+#' - `role`: Contributor's role in the study (read/write)
+#'
+#' ## Methods
+#'
+#' - `initialize()`: Create and configure a new ContributorLine instance
+#' - `printContributorLine()`: Generate formatted contributor information string
+#'
+#' @export
 ContributorLine <- R6::R6Class(
   classname = "ContributorLine",
   public = list(
+    #' @description
+    #' Initialize a new ContributorLine instance.
+    #'
+    #' @param name Character string. Contributor's full name.
+    #' @param email Character string. Contributor's email address.
+    #' @param role Character string. Contributor's role in the study.
+    #'
+    #' @return Invisibly returns self.
     initialize = function(name, email, role) {
       .setString(private = private, key = ".name", value = name)
       .setString(private = private, key = ".email", value = email)
       .setString(private = private, key = ".role", value = role)
     },
+    #' @description
+    #' Generate a formatted string representation of the contributor.
+    #'
+    #' @return Character string with formatted contributor information.
     printContributorLine = function() {
       txt <- glue::glue("Name: {private$.name} | Email: {private$.email} | Role: {private$.role}")
       return(txt)
@@ -330,10 +416,48 @@ ContributorLine <- R6::R6Class(
   )
 )
 
-# Study Meta ---------------
+#' StudyMeta R6 Class
+#'
+#' @description
+#' Comprehensive metadata container for a research study.
+#' Manages study information including title, therapeutic area, type, contributors, links, and tags.
+#'
+#' @details
+#' StudyMeta serves as the primary data container for study-level metadata. It coordinates
+#' with the ContributorLine class to maintain contributor information and provides
+#' methods for generating formatted output of study components.
+#'
+#' ## Active Fields
+#'
+#' - `studyTitle`: Title of the study (read/write)
+#' - `therapeuticArea`: Therapeutic area of the study (read/write)
+#' - `studyType`: Type of study conducted (read/write)
+#' - `studyLinks`: Character vector of relevant study links (read/write)
+#' - `studyTags`: Character vector of tags describing the study (read/write)
+#' - `contributors`: List of ContributorLine objects (read/write)
+#'
+#' ## Methods
+#'
+#' - `initialize()`: Create and configure a new StudyMeta instance
+#' - `listContributors()`: Generate formatted markdown list of contributors
+#' - `listStudyTags()`: Generate formatted markdown list of study tags
+#' - `listStudyLinks()`: Generate formatted markdown section of study resources
+#'
+#' @export
 StudyMeta <- R6::R6Class(
   classname = "StudyMeta",
   public = list(
+    #' @description
+    #' Initialize a new StudyMeta instance with study metadata.
+    #'
+    #' @param studyTitle Character string. Title of the study.
+    #' @param therapeuticArea Character string. Therapeutic area focus of the study.
+    #' @param studyType Character string. Type of study (e.g., observational, interventional).
+    #' @param contributors List of ContributorLine objects. Study team members.
+    #' @param studyLinks Character vector. Optional URLs and references for the study.
+    #' @param studyTags Character vector. Optional tags describing the study topics/characteristics.
+    #'
+    #' @return Invisibly returns self.
     initialize = function(studyTitle,
                           therapeuticArea,
                           studyType,
@@ -360,6 +484,10 @@ StudyMeta <- R6::R6Class(
 
     },
 
+    #' @description
+    #' Generate a formatted markdown list of all contributors.
+    #'
+    #' @return Character string with markdown-formatted contributor list.
     listContributors = function() {
       ctbs <- private$.contributors
       ctbsList <- purrr::map(
@@ -372,6 +500,10 @@ StudyMeta <- R6::R6Class(
       return(ctbs2)
     },
 
+    #' @description
+    #' Generate a formatted markdown list of study tags.
+    #'
+    #' @return Character string with markdown-formatted tag list.
     listStudyTags = function() {
       tags <- private$.studyTags
       if (length(tags) > 0) {
@@ -388,6 +520,10 @@ StudyMeta <- R6::R6Class(
       return(tagList)
     },
 
+    #' @description
+    #' Generate a formatted markdown section of study resources and links.
+    #'
+    #' @return Character string with markdown-formatted section of study resources.
     listStudyLinks = function() {
       links <- private$.studyLinks
       if (length(links) > 0) {
@@ -455,10 +591,44 @@ StudyMeta <- R6::R6Class(
   )
 )
 
-# Db Config Block -----------------------
+#' DbConfigBlock R6 Class
+#'
+#' @description
+#' Represents a database configuration block for connecting to a specific database.
+#' Encapsulates database connection parameters and naming conventions used during study execution.
+#'
+#' @details
+#' DbConfigBlock manages configuration for a single database connection within the Ulysses framework.
+#' This includes CDM schema specifications, cohort table references, and database labeling.
+#' Used within ExecOptions to manage multiple database connections.
+#'
+#' ## Active Fields
+#'
+#' - `configBlockName`: Unique identifier for this config block (read/write)
+#' - `cdmDatabaseSchema`: Schema name containing the CDM (read/write)
+#' - `cohortTable`: Table name for study cohorts (read/write)
+#' - `databaseName`: Database identifier (read/write, defaults to configBlockName)
+#' - `databaseLabel`: Human-readable database label (read/write)
+#'
+#' ## Methods
+#'
+#' - `initialize()`: Create and configure a new DbConfigBlock instance
+#' - `writeBlockSection()`: Generate formatted configuration block text
+#'
+#' @export
 DbConfigBlock <- R6::R6Class(
   classname = "DbConfigBlock",
   public = list(
+    #' @description
+    #' Initialize a new DbConfigBlock instance with database configuration.
+    #'
+    #' @param configBlockName Character string. Unique identifier for this configuration block.
+    #' @param cdmDatabaseSchema Character string. Schema containing CDM data.
+    #' @param cohortTable Character string. Table name for study cohorts.
+    #' @param databaseName Character string. Optional database identifier (defaults to configBlockName).
+    #' @param databaseLabel Character string. Optional human-readable database label (defaults to databaseName).
+    #'
+    #' @return Invisibly returns self.
     initialize = function(configBlockName,
                           cdmDatabaseSchema,
                           cohortTable,
@@ -487,6 +657,15 @@ DbConfigBlock <- R6::R6Class(
       }
     },
 
+    #' @description
+    #' Generate a formatted configuration block section for the config file.
+    #'
+    #' @param repoName Character string. Repository name.
+    #' @param dbms Character string. Database management system type.
+    #' @param workSchema Character string. Working schema for temp tables.
+    #' @param tempSchema Character string. Temporary table emulation schema.
+    #'
+    #' @return Character string with formatted configuration block.
     writeBlockSection = function(repoName, dbms, workSchema, tempSchema) {
 
       configBlockName <- private$.configBlockName
@@ -542,10 +721,42 @@ DbConfigBlock <- R6::R6Class(
   )
 )
 
-# Exec Options ---------------------
+#' ExecOptions R6 Class
+#'
+#' @description
+#' Manages execution options and database connection configurations for study pipeline.
+#' Coordinates multiple database connections and stores execution environment settings.
+#'
+#' @details
+#' ExecOptions serves as the configuration hub for study execution, managing database
+#' connections through DbConfigBlock objects and maintaining DBMS specifications.
+#' Used within UlyssesStudy to configure the execution environment.
+#'
+#' ## Active Fields
+#'
+#' - `dbms`: Database management system type (read/write)
+#' - `workDatabaseSchema`: Schema for working/staging tables (read/write)
+#' - `tempEmulationSchema`: Schema for temporary table emulation (read/write)
+#' - `dbConnectionBlocks`: List of DbConfigBlock objects (read/write)
+#'
+#' ## Methods
+#'
+#' - `initialize()`: Create and configure a new ExecOptions instance
+#' - `makeConfigFile()`: Generate and write configuration file for the study
+#'
+#' @export
 ExecOptions <- R6::R6Class(
   classname = "ExecOptions",
   public = list(
+    #' @description
+    #' Initialize a new ExecOptions instance with execution configuration.
+    #'
+    #' @param dbms Character string. Optional DBMS type (e.g., "postgresql", "sql-server").
+    #' @param workDatabaseSchema Character string. Optional schema for working tables.
+    #' @param tempEmulationSchema Character string. Optional schema for temp table emulation.
+    #' @param dbConnectionBlocks List of DbConfigBlock objects. Optional database configurations.
+    #'
+    #' @return Invisibly returns self.
     initialize = function(
     dbms = NULL,
     workDatabaseSchema = NULL,
@@ -574,6 +785,14 @@ ExecOptions <- R6::R6Class(
 
     },
 
+    #' @description
+    #' Generate and write the configuration file for the study repository.
+    #'
+    #' @param repoName Character string. Repository name.
+    #' @param repoPath Character string. Path to repository directory.
+    #' @param toolType Character string. Tool type - determines config structure.
+    #'
+    #' @return Invisibly returns the generated configuration file content.
     makeConfigFile = function(repoName, repoPath, toolType) {
       if(toolType == "dbms") {
         dbBlocks <- vector('list', length = length(private$.dbConnectionBlocks))
