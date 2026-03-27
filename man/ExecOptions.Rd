@@ -27,6 +27,19 @@ Used within UlyssesStudy to configure the execution environment.
 }
 }
 }
+\section{Active bindings}{
+\if{html}{\out{<div class="r6-active-bindings">}}
+\describe{
+\item{\code{dbms}}{Database management system type (e.g., "postgresql", "sql-server"). Can be read or set with validation.}
+
+\item{\code{workDatabaseSchema}}{Schema for working and staging tables. Can be read or set with validation.}
+
+\item{\code{tempEmulationSchema}}{Schema for temporary table emulation across different DBMS platforms. Can be read or set with validation.}
+
+\item{\code{dbConnectionBlocks}}{List of DbConfigBlock objects managing multiple database connections. Can be read or set with class validation.}
+}
+\if{html}{\out{</div>}}
+}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{

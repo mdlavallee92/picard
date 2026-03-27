@@ -64,3 +64,5 @@ inst/doc/
 
 hidden/
 /.quarto/
+
+PKGDOWN_SETUP.md

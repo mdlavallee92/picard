@@ -29,43 +29,108 @@ navbar:
 
 reference:
   - title: "Core Classes"
-    desc: "Main R6 classes for repository and study management"
-    contents:
-      - UlyssesStudy
-      - ExecutionSettings
-      - StudyMeta
-
-  - title: "Cohort Management"
-    desc: "Classes and functions for cohort definitions and manifests"
+    desc: "Main R6 classes for package functionality"
     contents:
       - CohortDef
       - CohortManifest
-
-  - title: "Concept Set Management"
-    desc: "Classes and functions for concept set management"
-    contents:
       - ConceptSetDef
       - ConceptSetManifest
-
-  - title: "Configuration"
-    desc: "Configuration and settings classes"
-    contents:
-      - ExecOptions
-      - DbConfigBlock
       - ContributorLine
+      - DbConfigBlock
+      - ExecOptions
+      - ExecutionSettings
+      - StudyMeta
+      - UlyssesStudy
+
+  - title: "Creation Functions"
+    desc: "Functions for creating objects and structures (make*)"
+    contents:
+      - makeExecOptions
+      - makeStudyMeta
+      - makeTaskFile
+      - makeUlyssesStudySettings
+
+  - title: "Initialization Functions"
+    desc: "Functions for initializing components (init*)"
+    contents:
+      - initializeRenv
+
+  - title: "Build Functions"
+    desc: "Functions for building study components (build*)"
+    contents:
+      - buildComplementCohort
+      - buildStudyHub
+      - buildSubsetCohortDemographic
+      - buildSubsetCohortTemporal
+      - buildUnionCohort
+
+  - title: "Create Functions"
+    desc: "Functions for creating new objects (create*)"
+    contents:
+      - createAgentBranch
+      - createBlankCohortsLoadFile
+      - createBlankConceptSetsLoadFile
+      - createExecutionSettings
+      - createExecutionSettingsFromConfig
+      - createPullRequest
+
+  - title: "Execution Functions"
+    desc: "Functions for executing study tasks (exec*)"
+    contents:
+      - execStudyPipeline
+      - execStudyTask
+
+  - title: "Configuration Functions"
+    desc: "Functions for configuration and setup (set*)"
+    contents:
+      - getTaskRunSummary
+      - setAtlasConnection
+      - setContributor
+      - setDbConfigBlock
+      - setOutputFolder
+
+  - title: "Loading Functions"
+    desc: "Functions for loading and importing data (load*)"
+    contents:
+      - loadCohortManifest
+      - loadConceptSetManifest
 
   - title: "Utility Functions"
-    desc: "Helper functions for repository management"
+    desc: "Other utility and helper functions"
     contents:
+      - agentSaveWork
+      - cleanColumnNames
+      - displayTaskStatusReport
+      - documentDependencies
+      - formatFloats
+      - formatPercentages
+      - generateCohorts
+      - importAndBind
+      - importAtlasCohorts
+      - importAtlasConceptSets
+      - launchCohortsLoadEditor
+      - launchConceptSetsLoadEditor
+      - orchestratePipelineExport
+      - pivotForComparison
+      - placeHolderExecOptions
+      - prepareDisseminationData
+      - recordTaskExecution
+      - resetCohortManifest
+      - resetConceptSetManifest
+      - restoreEnvironment
+      - reviewExportSchema
+      - saveWork
+      - shouldRerunTask
+      - snapshotEnvironment
+      - standardizeDataTypes
+      - templateAtlasCredentials
+      - updateStudyVersion
+      - validateCohortResults
+      - validateConfigYaml
+      - validateStudyTask
       - validateUlyssesStructure
-      - starts_with("make")
-      - starts_with("init")
-
-articles:
-  - title: "Getting Started"
-    navbar: ~
-    contents:
-      - starts_with("getting")
+      - visualizeCohortDependencies
+      - zipAndArchive
 
 development:
-  mode: auto
+  mode: "auto"

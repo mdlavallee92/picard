@@ -25,6 +25,17 @@ Used within StudyMeta to maintain a structured list of study contributors.
 }
 }
 }
+\section{Active bindings}{
+\if{html}{\out{<div class="r6-active-bindings">}}
+\describe{
+\item{\code{name}}{Contributor's full name. Can be read or set with validation.}
+
+\item{\code{email}}{Contributor's email address. Can be read or set with validation.}
+
+\item{\code{role}}{Contributor's role in the study. Can be read or set with validation.}
+}
+\if{html}{\out{</div>}}
+}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{

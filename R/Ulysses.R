@@ -298,6 +298,7 @@ UlyssesStudy <- R6::R6Class(
     }
   ),
   active = list(
+    #' @field repoName Study repository name. Can be read or set with validation.
     repoName = function(value) {
       if (missing(value)) return(private$.repoName)
       checkmate::assert_string(x = value, min.chars = 1)
@@ -305,6 +306,7 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field repoName}")
     },
 
+    #' @field repoFolder Parent directory for the repository. Can be read or set with validation.
     repoFolder = function(value) {
       if (missing(value)) return(private$.repoFolder)
       checkmate::assert_string(x = value, min.chars = 1)
@@ -312,6 +314,7 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field repoFolder}")
     },
 
+    #' @field toolType Tool type, either "dbms" or "external". Can be read or set with validation.
     toolType = function(value) {
       if (missing(value)) return(private$.toolType)
       checkmate::assert_choice(x = value, choices = c("dbms", "external"))
@@ -319,12 +322,14 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field toolType}")
     },
 
+    #' @field studyMeta StudyMeta object containing study metadata and configuration. Can be read or set with class validation.
     studyMeta = function(value) {
       if(missing(value)) return(private$.studyMeta)
       .setClass(private = private, key = ".studyMeta", value = value, class = "StudyMeta")
       cli::cli_alert_info("Updated {.field studyMeta}")
     },
 
+    #' @field gitRemote Optional URL for git remote repository. Can be read or set with validation.
     gitRemote = function(value) {
       if (missing(value)) return(private$.gitRemote)
       checkmate::assert_string(x = value, null.ok = TRUE)
@@ -332,6 +337,7 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field gitRemote}")
     },
 
+    #' @field renvLock Optional path to renv lock file for reproducibility. Can be read or set with validation.
     renvLock = function(value) {
       if (missing(value)) return(private$.renvLock)
       checkmate::assert_string(x = value, null.ok = TRUE)
@@ -396,18 +402,21 @@ ContributorLine <- R6::R6Class(
     .role = NA_character_
   ),
   active = list(
+    #' @field name Contributor's full name. Can be read or set with validation.
     name = function(value) {
       if (missing(value)) return(private$.name)
       .setString(private = private, key = ".name", value = value)
       cli::cli_alert_info("Updated contributor {.field name}")
     },
 
+    #' @field email Contributor's email address. Can be read or set with validation.
     email = function(value) {
       if (missing(value)) return(private$.email)
       .setString(private = private, key = ".email", value = value)
       cli::cli_alert_info("Updated contributor {.field email}")
     },
 
+    #' @field role Contributor's role in the study. Can be read or set with validation.
     role = function(value) {
       if (missing(value)) return(private$.role)
       .setString(private = private, key = ".role", value = value)
@@ -550,24 +559,28 @@ StudyMeta <- R6::R6Class(
     .studyTags = NULL
   ),
   active = list(
+    #' @field studyTitle Title of the study. Can be read or set with validation.
     studyTitle = function(value) {
       if (missing(value)) return(private$.studyTitle)
       .setString(private = private, key = ".studyTitle", value = value)
       cli::cli_alert_info("Updated {.field studyTitle}")
     },
 
+    #' @field therapeuticArea Therapeutic area focus of the study. Can be read or set with validation.
     therapeuticArea = function(value) {
       if (missing(value)) return(private$.therapeuticArea)
       .setString(private = private, key = ".therapeuticArea", value = value)
       cli::cli_alert_info("Updated {.field therapeuticArea}")
     },
 
+    #' @field studyType Type of study conducted. Can be read or set with validation.
     studyType = function(value) {
       if (missing(value)) return(private$.studyType)
       .setString(private = private, key = ".studyType", value = value)
       cli::cli_alert_info("Updated {.field studyType}")
     },
 
+    #' @field studyTags Character vector of tags describing study topics and characteristics. Can be read or set with validation.
     studyTags = function(value) {
       if (missing(value)) return(private$.studyTags)
       checkmate::assert_character(x = value)
@@ -575,6 +588,7 @@ StudyMeta <- R6::R6Class(
       cli::cli_alert_info("Updated {.field studyTags}")
     },
 
+    #' @field studyLinks Character vector of relevant study resource links and URLs. Can be read or set with validation.
     studyLinks = function(value) {
       if (missing(value)) return(private$.studyLinks)
       checkmate::assert_character(x = value)
@@ -582,6 +596,7 @@ StudyMeta <- R6::R6Class(
       cli::cli_alert_info("Updated {.field studyLinks}")
     },
 
+    #' @field contributors List of ContributorLine objects representing study team members. Can be read or set with class validation.
     contributors = function(value) {
       if (missing(value)) return(private$.contributors)
       checkmate::assert_list(x = value, min.len = 1, types = "ContributorLine")
@@ -689,30 +704,35 @@ DbConfigBlock <- R6::R6Class(
     .databaseLabel = NULL
   ),
   active = list(
+    #' @field configBlockName Unique identifier for this configuration block. Can be read or set with validation.
     configBlockName = function(value) {
       if (missing(value)) return(private$.configBlockName)
       .setString(private = private, key = ".configBlockName", value = value)
       cli::cli_alert_info("Updated {.field configBlockName}")
     },
 
+    #' @field cdmDatabaseSchema Schema name containing the CDM data. Can be read or set with validation.
     cdmDatabaseSchema = function(value) {
       if (missing(value)) return(private$.cdmDatabaseSchema)
       .setString(private = private, key = ".cdmDatabaseSchema", value = value)
       cli::cli_alert_info("Updated {.field cdmDatabaseSchema}")
     },
 
+    #' @field cohortTable Table name for study cohorts. Can be read or set with validation.
     cohortTable = function(value) {
       if (missing(value)) return(private$.cohortTable)
       .setString(private = private, key = ".cohortTable", value = value)
       cli::cli_alert_info("Updated {.field cohortTable}")
     },
 
+    #' @field databaseName Database identifier. Can be read or set with validation. Defaults to configBlockName.
     databaseName = function(value) {
       if (missing(value)) return(private$.databaseName)
       .setString(private = private, key = ".databaseName", value = value)
       cli::cli_alert_info("Updated {.field databaseName}")
     },
 
+    #' @field databaseLabel Human-readable database label for display. Can be read or set with validation.
     databaseLabel = function(value) {
       if (missing(value)) return(private$.databaseLabel)
       .setString(private = private, key = ".databaseLabel", value = value)
@@ -834,24 +854,28 @@ ExecOptions <- R6::R6Class(
     .dbConnectionBlocks = NULL
   ),
   active = list(
+    #' @field dbms Database management system type (e.g., "postgresql", "sql-server"). Can be read or set with validation.
     dbms = function(value) {
       if (missing(value)) return(private$.dbms)
       .setString(private = private, key = ".dbms", value = value)
       cli::cli_alert_info("Updated {.field dbms}")
     },
 
+    #' @field workDatabaseSchema Schema for working and staging tables. Can be read or set with validation.
     workDatabaseSchema = function(value) {
       if (missing(value)) return(private$.workDatabaseSchema)
       .setString(private = private, key = ".workDatabaseSchema", value = value)
       cli::cli_alert_info("Updated {.field workDatabaseSchema}")
     },
 
+    #' @field tempEmulationSchema Schema for temporary table emulation across different DBMS platforms. Can be read or set with validation.
     tempEmulationSchema = function(value) {
       if (missing(value)) return(private$.tempEmulationSchema)
       .setString(private = private, key = ".tempEmulationSchema", value = value)
       cli::cli_alert_info("Updated {.field tempEmulationSchema}")
     },
 
+    #' @field dbConnectionBlocks List of DbConfigBlock objects managing multiple database connections. Can be read or set with class validation.
     dbConnectionBlocks = function(value) {
       if (missing(value)) return(private$.dbConnectionBlocks)
       checkmate::assert_list(x = value, min.len = 1, types = "DbConfigBlock")

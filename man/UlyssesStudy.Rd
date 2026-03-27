@@ -30,6 +30,23 @@ comprehensive repository initialization.
 }
 }
 }
+\section{Active bindings}{
+\if{html}{\out{<div class="r6-active-bindings">}}
+\describe{
+\item{\code{repoName}}{Study repository name. Can be read or set with validation.}
+
+\item{\code{repoFolder}}{Parent directory for the repository. Can be read or set with validation.}
+
+\item{\code{toolType}}{Tool type, either "dbms" or "external". Can be read or set with validation.}
+
+\item{\code{studyMeta}}{StudyMeta object containing study metadata and configuration. Can be read or set with class validation.}
+
+\item{\code{gitRemote}}{Optional URL for git remote repository. Can be read or set with validation.}
+
+\item{\code{renvLock}}{Optional path to renv lock file for reproducibility. Can be read or set with validation.}
+}
+\if{html}{\out{</div>}}
+}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{

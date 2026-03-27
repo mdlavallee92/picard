@@ -1729,12 +1729,10 @@ CohortManifest <- R6::R6Class(
           next
         }
 
-        rendered_sql <- render_result
-
         # Translate to target dialect
         translate_result <- try({
           SqlRender::translate(
-            sql = rendered_sql,
+            sql = render_result,
             targetDialect = dbms,
             tempEmulationSchema = temp_schema
           )
@@ -1757,14 +1755,12 @@ CohortManifest <- R6::R6Class(
           next
         }
 
-        translated_sql <- translate_result
-
         # Execute and time it
         start_time <- Sys.time()
         result <- try({
           DatabaseConnector::executeSql(
             conn,
-            translated_sql,
+            translate_result,
             progressBar = TRUE,
             reportOverallTime = FALSE
           )
@@ -2208,17 +2204,7 @@ CohortManifest <- R6::R6Class(
 
 # helpers -------------
 
-#' Check if a table exists in the database
-#'
-#' @description Checks whether a table exists in the specified schema
-#'
-#' @param connection DatabaseConnector connection object
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name to check
-#' @param dbms Character. Database management system type
-#'
-#' @return Logical. TRUE if table exists, FALSE otherwise
-#'
+
 tableExists <- function(connection, schema, tableName, dbms) {
   tryCatch({
     query <- paste0("SELECT COUNT(*) FROM ", schema, ".", tableName, " WHERE 1=0")
@@ -2229,17 +2215,7 @@ tableExists <- function(connection, schema, tableName, dbms) {
   })
 }
 
-#' Create main cohort table SQL
-#'
-#' @description Generates SQL to create the main cohort table
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#' @param tempEmulationSchema Character. Temp emulation schema if needed
-#'
-#' @return Character. SQL statement
-#'
+
 createMainCohortTableSql <- function(schema, tableName, dbms, tempEmulationSchema = NULL) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT,
@@ -2263,16 +2239,7 @@ createMainCohortTableSql <- function(schema, tableName, dbms, tempEmulationSchem
   return(sql)
 }
 
-#' Create inclusion table SQL
-#'
-#' @description Generates SQL to create the inclusion table
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createInclusionTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2295,16 +2262,7 @@ createInclusionTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Create inclusion result table SQL
-#'
-#' @description Generates SQL to create the inclusion result table
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createInclusionResultTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2327,16 +2285,7 @@ createInclusionResultTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Create inclusion stats table SQL
-#'
-#' @description Generates SQL to create the inclusion stats table
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createInclusionStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2361,16 +2310,7 @@ createInclusionStatsTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Create summary stats table SQL
-#'
-#' @description Generates SQL to create the summary stats table
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createSummaryStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2393,16 +2333,7 @@ createSummaryStatsTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Create censor stats table SQL
-#'
-#' @description Generates SQL to create the cohort censor stats table for tracking censoring events
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createCensorStatsTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2423,16 +2354,7 @@ createCensorStatsTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Create checksum table SQL
-#'
-#' @description Generates SQL to create the cohort checksum table for tracking cohort definition hashes
-#'
-#' @param schema Character. Database schema name
-#' @param tableName Character. Table name
-#' @param dbms Character. Database management system type
-#'
-#' @return Character. SQL statement
-#'
+
 createChecksumTableSql <- function(schema, tableName, dbms) {
   sql <- "CREATE TABLE @schema.@table_name (
     cohort_definition_id BIGINT NOT NULL,
@@ -2455,22 +2377,7 @@ createChecksumTableSql <- function(schema, tableName, dbms) {
   return(sql)
 }
 
-#' Get cohort table names
-#'
-#' @description Creates a list of standard cohort table names
-#'
-#' @param cohortTable Character. Base name for the cohort table
-#' @param cohortSampleTable Character. Name for the sample table
-#' @param cohortInclusionTable Character. Name for the inclusion table
-#' @param cohortInclusionResultTable Character. Name for the inclusion result table
-#' @param cohortInclusionStatsTable Character. Name for the inclusion stats table
-#' @param cohortSummaryStatsTable Character. Name for the summary stats table
-#' @param cohortCensorStatsTable Character. Name for the censor stats table
-#' @param cohortSubsetAttritionTable Character. Name for the subset attrition table
-#' @param cohortChecksumTable Character. Name for the checksum table
-#'
-#' @return List containing all table names
-#'
+
 getCohortTableNames <- function(cohortTable = "cohort",
                                 cohortSampleTable = cohortTable,
                                 cohortInclusionTable = paste0(cohortTable, "_inclusion"),

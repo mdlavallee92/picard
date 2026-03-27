@@ -28,6 +28,21 @@ Used within ExecOptions to manage multiple database connections.
 }
 }
 }
+\section{Active bindings}{
+\if{html}{\out{<div class="r6-active-bindings">}}
+\describe{
+\item{\code{configBlockName}}{Unique identifier for this configuration block. Can be read or set with validation.}
+
+\item{\code{cdmDatabaseSchema}}{Schema name containing the CDM data. Can be read or set with validation.}
+
+\item{\code{cohortTable}}{Table name for study cohorts. Can be read or set with validation.}
+
+\item{\code{databaseName}}{Database identifier. Can be read or set with validation. Defaults to configBlockName.}
+
+\item{\code{databaseLabel}}{Human-readable database label for display. Can be read or set with validation.}
+}
+\if{html}{\out{</div>}}
+}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{

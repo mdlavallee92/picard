@@ -31,6 +31,23 @@ methods for generating formatted output of study components.
 }
 }
 }
+\section{Active bindings}{
+\if{html}{\out{<div class="r6-active-bindings">}}
+\describe{
+\item{\code{studyTitle}}{Title of the study. Can be read or set with validation.}
+
+\item{\code{therapeuticArea}}{Therapeutic area focus of the study. Can be read or set with validation.}
+
+\item{\code{studyType}}{Type of study conducted. Can be read or set with validation.}
+
+\item{\code{studyTags}}{Character vector of tags describing study topics and characteristics. Can be read or set with validation.}
+
+\item{\code{studyLinks}}{Character vector of relevant study resource links and URLs. Can be read or set with validation.}
+
+\item{\code{contributors}}{List of ContributorLine objects representing study team members. Can be read or set with class validation.}
+}
+\if{html}{\out{</div>}}
+}
 \section{Methods}{
 \subsection{Public methods}{
 \itemize{
