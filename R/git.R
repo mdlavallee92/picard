@@ -55,7 +55,7 @@ validateCodeState <- function() {
 
   # Get current commit SHA
   sha <- tryCatch({
-    log <- gert::git_log(n = 1)
+    log <- gert::git_log()
     if (nrow(log) == 0) {
       cli::cli_abort("No commits found in repository")
     }
