@@ -1,0 +1,309 @@
+---
+title: "Developing the Pipeline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Developing the Pipeline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Introduction
+
+Once your repository is initialized (see [Launching a Picard Study](launching_a_study.html)), the next phase is to develop your analysis pipeline. This vignette walks you through the complete development workflow on the `develop` branch, from defining inputs through testing your code.
+
+## Development Workflow Overview
+
+The typical workflow is:
+
+1. Finalize Git and renv setup
+2. Create your development branch
+3. Define your inputs (cohorts and concept sets)
+4. Create analysis tasks and supporting code
+5. Commit your changes with `saveWork()`
+6. Test individual tasks and the full pipeline
+7. Iterate until your analysis is complete
+
+## Step 1: Finalize Git and renv Setup
+
+**Git:** You already have a local repository. If you provided `gitRemote` during setup, your code is already synced. If not, see [Setting Up Git Version Control](launching_a_study.html#setting-up-git-version-control) in the launching vignette to push your code to a remote.
+
+**renv:** This is your responsibility. It's **highly encouraged** to set this up immediately:
+
+```{r eval = FALSE}
+renv::init(project = "~/studies/diabetes_study")
+```
+
+This captures your current R environment, ensuring reproducibility for your team.
+
+## Step 2: Create Your Development Branch
+
+All development work happens on the `develop` branch (never on `main`):
+
+```bash
+# Create and switch to develop branch
+git checkout -b develop
+git push -u origin develop
+```
+
+All subsequent work will be done here and tested before any production execution.
+
+## Step 3: Define Your Inputs (Cohorts and Concept Sets)
+
+Before writing analysis code, you need to define the populations and phenotypes. This happens in the `inputs/` folder:
+
+**For Cohorts:** Use the interactive editor to add your study populations:
+
+```{r eval = FALSE}
+launchCohortsLoadEditor(cohortsFolderPath = here::here("inputs/cohorts"))
+```
+
+This opens a Shiny app where you can add cohort metadata without editing CSV files directly.
+
+**For Concept Sets:** Similarly, define your phenotypes:
+
+```{r eval = FALSE}
+launchConceptSetsLoadEditor(conceptSetsFolderPath = here::here("inputs/conceptSets"))
+```
+
+See [Loading Inputs](loading_inputs.html) for detailed guidance on importing from ATLAS and managing manifests.
+
+## Step 4: Create Analysis Tasks and Supporting Code
+
+Analysis happens in the `analysis/` folder, which has two key subdirectories:
+
+**Tasks** (`analysis/tasks/`) - Main workflow files executed by the pipeline
+**Source** (`analysis/src/`) - Supporting functions and utilities used by tasks
+
+### Creating a Task
+
+Use `makeTaskFile()` to scaffold a new task:
+
+```{r eval = FALSE}
+makeTaskFile(
+  nameOfTask = "01_DescriptiveStats",
+  author = "Jane Doe",
+  description = "Generate descriptive statistics for primary cohort",
+  projectPath = here::here(),
+  openFile = TRUE
+)
+```
+
+This creates a standardized R script in `analysis/tasks/01_DescriptiveStats.R` with a template structure.
+
+**Task Naming Convention:** Use `NN_taskName.R` format where NN is a two-digit number (01, 02, 03). Tasks execute in alphabetical order, so the numbering controls execution sequence.
+
+### Creating Supporting Source Files
+
+For reusable utility functions, create files in `analysis/src/` using `makeSrcFile()`:
+
+```{r eval = FALSE}
+makeSrcFile(
+  fileName = "custom_analysis_functions",
+  author = "Jane Doe",
+  description = "Helper functions for cohort calculations and data validation"
+)
+```
+
+This creates a standardized R script in `analysis/src/custom_analysis_functions.R` with a template structure for your utility functions.
+
+**Important:** Treat source files like R package development:
+
+- **Use `package::function()` notation** instead of `library()` calls:
+  ```{r eval = FALSE}
+  # Good: Use explicit namespace
+  result <- dplyr::filter(data, age > 18)
+  
+  # Avoid: Loading entire library
+  # library(dplyr)
+  # result <- filter(data, age > 18)
+  ```
+  
+  This makes dependencies explicit and avoids namespace conflicts.
+
+- **Document each function** with a clear comment block describing:
+  - What the function does
+  - What inputs it expects
+  - What it returns
+  
+  Example:
+  ```{r eval = FALSE}
+  # Purpose: Calculate age in years from birth date
+  # Inputs: birth_date (Date or character in YYYY-MM-DD format)
+  # Returns: Numeric age in years
+  calculate_age <- function(birth_date) {
+    birth_date <- as.Date(birth_date)
+    age <- as.numeric(lubridate::interval(birth_date, Sys.Date()), "years")
+    return(floor(age))
+  }
+  ```
+
+Then source these files from your tasks:
+
+```{r eval = FALSE}
+source(here::here("analysis/src/custom_analysis_functions.R"))
+```
+
+### Creating SqlRender SQL Queries
+
+For parameterized SQL queries used with SqlRender, create files in `analysis/src/sql/` using `makeSrcSqlFile()`:
+
+```{r eval = FALSE}
+makeSrcSqlFile(
+  fileName = "condition_occurrence_summary",
+  author = "Jane Doe",
+  description = "Count conditions by month in the CDM"
+)
+```
+
+This creates a standardized SQL file in `analysis/src/sql/condition_occurrence_summary.sql` with placeholders for SqlRender parameters.
+
+**Important:** SqlRender uses `@paramName` notation for substitution:
+
+```sql
+/* Document your parameters at the top of the file
+   @cdmDatabaseSchema - Schema containing OMOP CDM tables
+   @workDatabaseSchema - Schema for output tables
+*/
+
+SELECT *
+FROM @cdmDatabaseSchema.condition_occurrence
+WHERE month_of_year = 6
+LIMIT 100;
+```
+
+Then render and execute from your R tasks:
+
+```{r eval = FALSE}
+# Read the SQL file
+sql <- readr::read_file(here::here("analysis/src/sql/condition_occurrence_summary.sql"))
+
+# Render parameters using SqlRender
+rendered_sql <- SqlRender::render(
+  sql,
+  cdmDatabaseSchema = "omop_cdm",
+  workDatabaseSchema = "work_schema"
+)
+
+# Execute the rendered query
+result <- DatabaseConnector::executeSql(connection, rendered_sql)
+```
+
+## Step 5: Commit Changes with `saveWork()`
+
+After creating your analysis code, commit your changes to track them in Git. Picard provides `saveWork()` to make Git commits easy for new users:
+
+```{r eval = FALSE}
+saveWork("Add descriptive statistics task")
+```
+
+`saveWork()` is a convenience wrapper around Git operations that handles the common workflow for you:
+
+1. **Show what changed** - Displays all modified, new, and deleted files
+2. **Confirm commit** - Asks you to approve the changes before proceeding
+3. **Stage files** - Automatically stages all changes
+4. **Commit** - Creates a commit with your message
+5. **Pull from remote** - Gets the latest changes from your team
+6. **Push to remote** - Syncs your commit to the shared repository
+
+**Key features:**
+
+- **Protection from mistakes:** Prevents you from accidentally committing to the `main` branch
+- **Interactive confirmation:** Shows exactly which files changed and asks you to confirm before committing
+- **Work-in-progress commits:** Use `push = FALSE` to commit locally without pushing (useful for saving work mid-session):
+  
+```{r eval = FALSE}
+saveWork("WIP: Testing new validation logic", push = FALSE)
+```
+
+- **Automatic branch creation:** If your feature branch doesn't exist, `saveWork()` creates it for you
+- **Syncs with team:** Pulls remote changes before pushing your work, reducing merge conflicts
+
+**Full function signature:**
+
+```{r eval = FALSE}
+saveWork(
+  commitMessage,                    # Required: Descriptive message
+  branch = get_current_branch(),    # Current branch (or specify new one)
+  push = TRUE,                      # FALSE for local-only commits
+  gitRemoteName = "origin"          # Remote repository name
+)
+```
+
+**For new Git users:** Use `saveWork()` regularly as you develop. It simplifies the entire commit workflow and protects you from common Git mistakes.
+
+**For advanced users:** You can use Git directly if you prefer. Many developers commit changes as they go using:
+
+```bash
+git add analysis/tasks/01_DescriptiveStats.R
+git commit -m "Add descriptive statistics task"
+git pull origin develop
+git push origin develop
+```
+
+Either approach works—use what's comfortable for your workflow.
+
+## Step 6: Test Your Development Work
+
+Picard provides two testing modalities on the `develop` branch:
+
+### Test Single Task with `testStudyTask()`
+
+Test the current task file in isolation:
+
+```{r eval = FALSE}
+# Open your task file (e.g., 01_DescriptiveStats.R) and run:
+testStudyTask()
+```
+
+This executes only the current file, allowing rapid iteration on specific tasks without running the entire pipeline.
+
+### Test Full Pipeline with `testStudyPipeline()`
+
+Once individual tasks work, test the complete pipeline:
+
+```{r eval = FALSE}
+testStudyPipeline()
+```
+
+This runs all tasks in sequence (in alphabetical order) with the same configuration as production, helping you catch integration issues.
+
+**Testing Workflow:**
+1. Edit a task file
+2. Run `testStudyTask()` to verify the individual task works
+3. Once satisfied, run `testStudyPipeline()` to verify the full workflow
+4. Commit your changes to `develop`
+
+### Commit and Push to Develop
+
+After testing successfully:
+
+```bash
+git add analysis/tasks/01_DescriptiveStats.R
+git add analysis/src/custom_analysis_functions.R
+git commit -m "Add descriptive stats task and utility functions"
+git push origin develop
+```
+
+## Next Steps: Production Execution
+
+Once your analysis is tested and validated on `develop`, see [Running the Pipeline](running_the_pipeline.html) for instructions on production execution, which involves creating a release branch and running the full validated pipeline.
+
+## Quick Reference: Key Functions by Phase
+
+| Phase | Function | Purpose |
+|-------|----------|---------|
+| **Setup** | `launchCohortsLoadEditor()` | Interactive cohort metadata editor |
+| **Setup** | `launchConceptSetsLoadEditor()` | Interactive concept set editor |
+| **Development** | `makeTaskFile()` | Create new analysis task |
+| **Development** | `makeSrcFile()` | (optional) Create utility/helper function file |
+| **Development** | `makeSrcSqlFile()` | (optional) Create parameterized SQL query file |
+| **Development** | `saveWork()` | Commit and push code changes to remote |
+| **Testing** | `testStudyTask()` | Test current task file only |
+| **Testing** | `testStudyPipeline()` | Test full pipeline end-to-end |
+| **Production** | See Running the Pipeline | Execute on release branch |
+
+## See Also
+
+- [Launching a Picard Study](launching_a_study.html) - Repository initialization and setup
+- [Loading Inputs](loading_inputs.html) - Setting up cohorts and concept sets
+- [Running the Pipeline](running_the_pipeline.html) - Production pipeline execution

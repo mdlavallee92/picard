@@ -380,10 +380,10 @@ generateCohorts <- function(executionSettings, pipelineVersion, override = FALSE
 #'  based on file changes, dependencies, cohort changes, and previous errors. Automatically builds execution settings from configBlock.
 #'  Default: FALSE
 #' @param env the execution environment
-#' @export
-execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
-                          checkStatus = FALSE,
-                          env = rlang::caller_env()) {
+#' @keywords internal
+execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
+                         checkStatus = FALSE,
+                         env = rlang::caller_env()) {
 
   cli::cat_rule(glue::glue_col("Run Task: {yellow {taskFile}}"))
   cli::cat_bullet(
@@ -491,28 +491,78 @@ execStudyTask <- function(taskFile, configBlock, pipelineVersion = "dev",
   invisible(res)
 }
 
-#' @title Function to execute all study task in analysis folder on set of configBlock
-#' @param configBlock name of one or multiple configBlock to use in the execution
-#' @param updateType the type of version increment: 'major', 'minor', or 'patch'. The current version
-#'   will be read from config.yml and incremented accordingly before pipeline execution.
-#' @param skipRenv Logical. If TRUE, skips renv validation and snapshotting. Defaults to FALSE.
-#'   Useful for testing when renv causes issues. Default: FALSE
-#' @param env the execution environment
+#' @title Test a Single Study Task
+#' @description Executes a single task in test mode using the "dev" pipeline version.
+#'   Checks that you're not on main branch, then runs the task with checkStatus = TRUE.
+#'   Useful for testing individual task changes before running full pipeline.
+#' @param taskFile Character. The name of the task file (base name only, no path).
+#' @param configBlock Character. The name of the config block to use.
+#' @param env The execution environment. Defaults to caller environment.
+#' @return Invisibly returns the task result
 #' @export
-execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = rlang::caller_env()) {
+#' @examples
+#' \dontrun{
+#' # Test a task on develop branch
+#' testStudyTask("01_generate_cohorts.R", configBlock = "myConfig")
+#' }
+testStudyTask <- function(taskFile, configBlock, env = rlang::caller_env()) {
+  checkmate::assert_string(taskFile, min.chars = 1)
+  checkmate::assert_string(configBlock, min.chars = 1)
   
-  cli::cli_rule("Execute Study Pipeline")
+  # Check branch
+  branch <- get_current_branch()
+  if (branch == "main") {
+    cli::cli_abort(c(
+      "Cannot run test task on main branch!",
+      "i" = "Switch to develop or a feature branch: {.code git checkout develop}"
+    ))
+  }
   
-  # Validate code state before proceeding
-  codeCommitSha <- validateCodeState()
+  cli::cli_rule("TEST Mode: Study Task")
+  cli::cli_alert_warning("Testing on branch: {branch}")
+  cli::cli_alert_info("Using DEV version for test run")
   
-  # Validate environment and snapshot dependencies
-  lockfileHash <- NULL
-  if (!skipRenv) {
-    validateEnvironment()
-    lockfileHash <- snapshotEnvironment()
+  execute_task(
+    taskFile = taskFile,
+    configBlock = configBlock,
+    pipelineVersion = "dev",
+    checkStatus = TRUE,
+    env = env
+  )
+}
+
+#' @title Core Pipeline Execution Logic
+#' @description Internal function containing all pipeline execution logic.
+#'   Called by both testStudyPipeline and execStudyPipeline with different parameters.
+#' @param configBlock name of one or multiple configBlock to use in the execution
+#' @param updateType the type of version increment: 'major', 'minor', or 'patch'. 
+#'   Only used when testMode = FALSE.
+#' @param testMode Logical. If TRUE, skips all validations and uses "dev" version.
+#'   If FALSE, enforces code validation and version management. Default: FALSE
+#' @param skipRenv Logical. If TRUE, skips renv validation. Default: FALSE
+#' @param env the execution environment
+#' @return Invisibly returns task results list
+#' @keywords internal
+execute_pipeline <- function(configBlock, updateType = NULL, testMode = FALSE, 
+                             skipRenv = FALSE, env = rlang::caller_env()) {
+  
+  # Determine pipeline version and set mode-specific behavior
+  if (testMode) {
+    pipelineVersion <- "dev"
+    cli::cli_alert_info("Using DEV version for test run")
   } else {
-    cli::cli_alert_warning("Skipping renv validation and snapshot (testing mode)")
+    # Production mode - validate and increment version
+    # Validate code state before proceeding
+    codeCommitSha <- validateCodeState()
+    
+    # Validate environment and snapshot dependencies
+    if (!skipRenv) {
+      validateEnvironment()
+      lockfileHash <- snapshotEnvironment()
+    } else {
+      cli::cli_alert_warning("Skipping renv validation and snapshot (testing mode)")
+      lockfileHash <- NULL
+    }
   }
   
   # Validate config.yml file structure
@@ -523,50 +573,87 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
     stop("Pipeline cannot proceed with invalid configuration")
   })
   
-  # Validate updateType parameter
-  tryCatch({
-    updateType <- tolower(trimws(updateType))
-    if (!(updateType %in% c("major", "minor", "patch"))) {
-      cli::cli_alert_danger("Invalid updateType: {updateType}")
-      cli::cli_bullets(c(
-        x = "updateType must be one of: major, minor, patch",
-        i = "MAJOR - Breaking changes",
-        i = "MINOR - New features, backward compatible",
-        i = "PATCH - Bug fixes, no new features"
-      ))
-      stop("Invalid updateType parameter")
-    }
-  }, error = function(e) {
-    if (grepl("Invalid", e$message)) {
-      stop(e$message)
-    } else {
-      cli::cli_alert_danger("Error validating updateType: {e$message}")
-      stop("Failed to validate updateType")
-    }
-  })
+  # Validate updateType parameter (production mode only)
+  if (!testMode) {
+    tryCatch({
+      updateType <- tolower(trimws(updateType))
+      if (!(updateType %in% c("major", "minor", "patch"))) {
+        cli::cli_alert_danger("Invalid updateType: {updateType}")
+        cli::cli_bullets(c(
+          x = "updateType must be one of: major, minor, patch",
+          i = "MAJOR - Breaking changes",
+          i = "MINOR - New features, backward compatible",
+          i = "PATCH - Bug fixes, no new features"
+        ))
+        stop("Invalid updateType parameter")
+      }
+    }, error = function(e) {
+      if (grepl("Invalid", e$message)) {
+        stop(e$message)
+      } else {
+        cli::cli_alert_danger("Error validating updateType: {e$message}")
+        stop("Failed to validate updateType")
+      }
+    })
+    
+    # Read current version from config.yml
+    tryCatch({
+      configPath <- fs::path(here::here(), "config.yml")
+      configYml <- readr::read_lines(configPath)
+      versionLine <- which(grepl("  version: ", configYml))
+      
+      if (length(versionLine) == 0) {
+        cli::cli_alert_danger("Version not found in config.yml")
+        stop("Cannot find version in config.yml")
+      }
+      
+      currentVersionLine <- configYml[versionLine[1]]
+      currentVersion <- gsub(".*version:\\s*", "", currentVersionLine)
+      currentVersion <- trimws(currentVersion)
+      
+      cli::cli_alert_info("Current version from config.yml: {currentVersion}")
+      
+    }, error = function(e) {
+      cli::cli_alert_danger("Failed to read version from config.yml: {e$message}")
+      stop("Cannot read current version")
+    })
+    
+    # Increment version based on updateType
+    cli::cli_rule("Version Increment")
+    
+    tryCatch({
+      # Parse current version
+      versionParts <- as.integer(strsplit(currentVersion, "\\.")[[1]])
+      
+      # Increment appropriate version part
+      if (updateType == "major") {
+        versionParts[1] <- versionParts[1] + 1
+        versionParts[2] <- 0
+        versionParts[3] <- 0
+        incrementLabel <- "MAJOR"
+      } else if (updateType == "minor") {
+        versionParts[2] <- versionParts[2] + 1
+        versionParts[3] <- 0
+        incrementLabel <- "MINOR"
+      } else if (updateType == "patch") {
+        versionParts[3] <- versionParts[3] + 1
+        incrementLabel <- "PATCH"
+      }
+      
+      pipelineVersion <- paste0(versionParts, collapse = ".")
+      
+      cli::cli_alert_success("{incrementLabel} increment: {currentVersion} → {pipelineVersion}")
+      
+      # Update version across entire repo (includes semantic version validation)
+      cli::cli_alert_info("Updating version in config.yml...")
+      updateStudyVersion(versionNumber = pipelineVersion)
+      
+    }, error = function(e) {
+      cli::cli_alert_danger("Failed to increment version: {e$message}")
+      stop("Version increment failed")
+    })
+  }
   
-  # Read current version from config.yml
-  tryCatch({
-    configPath <- fs::path(here::here(), "config.yml")
-    configYml <- readr::read_lines(configPath)
-    versionLine <- which(grepl("  version: ", configYml))
-    
-    if (length(versionLine) == 0) {
-      cli::cli_alert_danger("Version not found in config.yml")
-      stop("Cannot find version in config.yml")
-    }
-    
-    currentVersionLine <- configYml[versionLine[1]]
-    currentVersion <- gsub(".*version:\\s*", "", currentVersionLine)
-    currentVersion <- trimws(currentVersion)
-    
-    cli::cli_alert_info("Current version from config.yml: {currentVersion}")
-    
-  }, error = function(e) {
-    cli::cli_alert_danger("Failed to read version from config.yml: {e$message}")
-    stop("Cannot read current version")
-  })
-   
   # Get list of tasks to run
   tryCatch({
     taskFilesToRun <- fs::dir_ls("analysis/tasks", type = "file") |>
@@ -582,41 +669,6 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
   }, error = function(e) {
     cli::cli_alert_danger("Failed to scan tasks folder: {e$message}")
     stop("Cannot read analysis/tasks directory")
-  })
-  
-  # Increment version based on updateType
-  cli::cli_rule("Version Increment")
-  
-  tryCatch({
-    # Parse current version
-    versionParts <- as.integer(strsplit(currentVersion, "\\.")[[1]])
-    
-    # Increment appropriate version part
-    if (updateType == "major") {
-      versionParts[1] <- versionParts[1] + 1
-      versionParts[2] <- 0
-      versionParts[3] <- 0
-      incrementLabel <- "MAJOR"
-    } else if (updateType == "minor") {
-      versionParts[2] <- versionParts[2] + 1
-      versionParts[3] <- 0
-      incrementLabel <- "MINOR"
-    } else if (updateType == "patch") {
-      versionParts[3] <- versionParts[3] + 1
-      incrementLabel <- "PATCH"
-    }
-    
-    newVersion <- paste0(versionParts, collapse = ".")
-    
-    cli::cli_alert_success("{incrementLabel} increment: {currentVersion} → {newVersion}")
-    
-    # Update version across entire repo (includes semantic version validation)
-    cli::cli_alert_info("Updating version in config.yml...")
-    updateStudyVersion(versionNumber = newVersion)
-    
-  }, error = function(e) {
-    cli::cli_alert_danger("Failed to increment version: {e$message}")
-    stop("Version increment failed")
   })
   
   # Create execution settings from first configBlock
@@ -639,7 +691,7 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
     
     # Create log file with version and timestamp
     dateStamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-    logFileName <- glue::glue("picard_log_{newVersion}_{dateStamp}.txt")
+    logFileName <- glue::glue("picard_log_{pipelineVersion}_{dateStamp}.txt")
     logFilePath <- fs::path(logDir, logFileName)
     
     cli::cli_alert_info("Logging pipeline execution to: {fs::path_rel(logFilePath)}")
@@ -648,11 +700,12 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
     logHeader <- c(
       "================================================================================",
       glue::glue("Picard Pipeline Execution Log"),
-      glue::glue("Pipeline Version: {newVersion}"),
+      glue::glue("Pipeline Version: {pipelineVersion}"),
       glue::glue("Execution Start Time: {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
       glue::glue("Config Blocks: {paste(configBlock, collapse = ', ')}"),
       glue::glue("Update Type: {updateType}"),
       glue::glue("Tasks: {length(taskFilesToRun)}"),
+      glue::glue("Test Mode: {testMode}"),
       "================================================================================",
       ""
     )
@@ -730,7 +783,7 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
   tryCatch({
     generateCohorts(
       executionSettings = executionSettings,
-      pipelineVersion = newVersion,
+      pipelineVersion = pipelineVersion,
       override = TRUE
     )
   }, error = function(e) {
@@ -758,10 +811,10 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
       tryCatch({
         cli::cli_alert_info("Executing task {task}/{length(taskFilesToRun)}: {taskName}")
         
-        result <- execStudyTask(
+        result <- execute_task(
           taskFile = taskName,
           configBlock = configBlock[db],
-          pipelineVersion = newVersion,
+          pipelineVersion = pipelineVersion,
           checkStatus = TRUE,
           env = env
         )
@@ -802,7 +855,7 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
     cli::cli_alert_warning("Failed tasks: {failureCount}")
   }
   
-  cli::cli_alert_info("Pipeline version: {newVersion}")
+  cli::cli_alert_info("Pipeline version: {pipelineVersion}")
   cli::cli_rule()
   
   # Append summary to log file
@@ -812,12 +865,13 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
       "================================================================================",
       "Pipeline Execution Summary",
       "================================================================================",
-      glue::glue("Pipeline Version: {newVersion}"),
+      glue::glue("Pipeline Version: {pipelineVersion}"),
       glue::glue("Completion Time: {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
       glue::glue("Successful Tasks: {successCount}"),
       glue::glue("Failed Tasks: {failureCount}"),
       glue::glue("Total Tasks: {length(taskResults)}"),
       glue::glue("Log File: {fs::path_rel(logFilePath)}"),
+      glue::glue("Test Mode: {testMode}"),
       "================================================================================",
       ""
     )
@@ -825,6 +879,181 @@ execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = r
     write(summaryLines, file = logFilePath, append = TRUE)
     cli::cli_alert_success("Pipeline log saved to: {fs::path_rel(logFilePath)}")
   }
+  
+  invisible(taskResults)
+}
+
+#' @title Test Study Pipeline
+#' @description Executes the full study pipeline in test mode using the "dev" pipeline version.
+#'   Skips all git validation, renv checks, and version management. Useful for iterative 
+#'   testing during development.
+#' @param configBlock Character or character vector. Name(s) of config block(s) to use.
+#' @param env The execution environment. Defaults to caller environment.
+#' @return Invisibly returns task results list
+#' @export
+#' @examples
+#' \dontrun{
+#' # Test full pipeline on develop branch
+#' testStudyPipeline(configBlock = "myConfig")
+#' }
+testStudyPipeline <- function(configBlock, env = rlang::caller_env()) {
+  checkmate::assert_character(configBlock, min.len = 1, any.missing = FALSE)
+  
+  # Check branch
+  branch <- get_current_branch()
+  if (branch == "main") {
+    cli::cli_abort(c(
+      "Cannot run test pipeline on main branch!",
+      "i" = "Switch to develop or a feature branch: {.code git checkout develop}"
+    ))
+  }
+  
+  cli::cli_rule("TEST Mode: Study Pipeline")
+  cli::cli_alert_warning("Testing on branch: {branch}")
+  cli::cli_alert_info("Using DEV version for test run")
+  
+  execute_pipeline(
+    configBlock = configBlock,
+    testMode = TRUE,
+    skipRenv = TRUE,
+    env = env
+  )
+}
+
+#' @title Production Study Pipeline Execution
+#' @description Executes the full study pipeline in production mode with full validation,
+#'   version management, and reproducibility tracking. Creates a release branch, runs
+#'   the complete pipeline, provides PR instructions, and saves reference to PENDING_PR.md.
+#' @param configBlock Character or character vector. Name(s) of config block(s) to use.
+#' @param updateType Character. Type of version increment: 'major', 'minor', or 'patch'.
+#'   - MAJOR: Breaking changes
+#'   - MINOR: New features, backward compatible
+#'   - PATCH: Bug fixes, no new features
+#' @param skipRenv Logical. If TRUE, skips renv validation. Defaults to FALSE.
+#'   Useful for testing issues. Default: FALSE
+#' @param env The execution environment. Defaults to caller environment.
+#' @return Invisibly returns task results list
+#' @export
+#' @examples
+#' \dontrun{
+#' # Run production pipeline with patch version increment
+#' execStudyPipeline(configBlock = "myConfig", updateType = "patch")
+#' }
+execStudyPipeline <- function(configBlock, updateType, skipRenv = FALSE, env = rlang::caller_env()) {
+  checkmate::assert_character(configBlock, min.len = 1, any.missing = FALSE)
+  checkmate::assert_string(updateType, min.chars = 1)
+  checkmate::assert_logical(skipRenv, len = 1)
+  
+  # Check current branch
+  branch <- get_current_branch()
+  if (branch == "main") {
+    cli::cli_abort(c(
+      "Cannot run production pipeline on main branch!",
+      "i" = "Production runs use release branches.",
+      "i" = "Create/checkout: {.code git checkout develop}"
+    ))
+  }
+  
+  cli::cli_rule("PRODUCTION Mode: Study Pipeline")
+  
+  # Read current version to determine release branch name
+  tryCatch({
+    configPath <- fs::path(here::here(), "config.yml")
+    configYml <- readr::read_lines(configPath)
+    versionLine <- which(grepl("  version: ", configYml))
+    
+    if (length(versionLine) == 0) {
+      cli::cli_alert_danger("Version not found in config.yml")
+      stop("Cannot find version in config.yml")
+    }
+    
+    currentVersionLine <- configYml[versionLine[1]]
+    currentVersion <- gsub(".*version:\\s*", "", currentVersionLine)
+    currentVersion <- trimws(currentVersion)
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to read version from config.yml: {e$message}")
+    stop("Cannot read current version")
+  })
+  
+  # Parse version and increment
+  tryCatch({
+    versionParts <- as.integer(strsplit(currentVersion, "\\.")[[1]])
+    
+    updateType <- tolower(trimws(updateType))
+    if (!(updateType %in% c("major", "minor", "patch"))) {
+      cli::cli_alert_danger("Invalid updateType: {updateType}")
+      stop("updateType must be: major, minor, or patch")
+    }
+    
+    if (updateType == "major") {
+      versionParts[1] <- versionParts[1] + 1
+      versionParts[2] <- 0
+      versionParts[3] <- 0
+    } else if (updateType == "minor") {
+      versionParts[2] <- versionParts[2] + 1
+      versionParts[3] <- 0
+    } else if (updateType == "patch") {
+      versionParts[3] <- versionParts[3] + 1
+    }
+    
+    newVersion <- paste0(versionParts, collapse = ".")
+    
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to calculate new version: {e$message}")
+    stop("Version calculation failed")
+  })
+  
+  # Create/checkout release branch
+  releaseBranch <- glue::glue("release/{newVersion}")
+  cli::cli_alert_info("Creating/checking out release branch: {.emph {releaseBranch}}")
+  
+  tryCatch({
+    branch_exists <- gert::git_branch_exists(releaseBranch)
+    
+    if (!branch_exists) {
+      gert::git_branch_create(branch = releaseBranch, checkout = TRUE)
+      cli::cli_alert_success("Created and checked out: {.emph {releaseBranch}}")
+    } else {
+      gert::git_branch_checkout(branch = releaseBranch)
+      cli::cli_alert_success("Checked out existing: {.emph {releaseBranch}}")
+    }
+  }, error = function(e) {
+    cli::cli_abort("Failed to create/checkout release branch: {e$message}")
+  })
+  
+  # Run pipeline in production mode
+  cli::cli_alert_info("Running pipeline on release branch...")
+  
+  taskResults <- execute_pipeline(
+    configBlock = configBlock,
+    updateType = updateType,
+    testMode = FALSE,
+    skipRenv = skipRenv,
+    env = env
+  )
+  
+  # After successful execution, create PR metadata
+  cli::cli_rule("Production Pipeline Complete")
+  
+  prMeta <- createPullRequest(
+    branchName = releaseBranch,
+    title = glue::glue("[Pipeline {newVersion}] {toupper(updateType)} release"),
+    description = glue::glue(
+      "Automated production pipeline run\n",
+      "Version: {newVersion}\n",
+      "Type: {toupper(updateType)}\n",
+      "Config: {paste(configBlock, collapse = ', ')}"
+    ),
+    targetBranch = "main"
+  )
+  
+  # Save PR reference file for manual PR creation
+  save_pr_reference(prMeta)
+  
+  cli::cli_alert_success("Production run complete on {.emph {releaseBranch}}")
+  cli::cli_alert_info("PR reference saved to: PENDING_PR.md")
+  cli::cli_alert_info("Next: Review PENDING_PR.md, create PR in your Git provider, then run clearPendingPR()")
   
   invisible(taskResults)
 }
@@ -856,4 +1085,121 @@ addMainFile <- function(repoName, repoFolder, toolType, configBlocks, studyName)
   )
   invisible(mainR)
 
+}
+
+#' @title Add Test Main File to Extras Folder
+#' @description Creates test_main.R script in the extras folder for development iteration.
+#'   This provides a testing variant of the production pipeline that uses testStudyPipeline().
+#' @param repoName Character. Name of the repository.
+#' @param repoFolder Character. Parent directory of the repository.
+#' @param toolType Character. Tool type, either "dbms" or "external".
+#' @param configBlocks List or Character vector. Database config blocks (from ExecOptions) or block names.
+#' @param studyName Character. Name of the study.
+#' @keywords internal
+addTestMainFile <- function(repoName, repoFolder, toolType, configBlocks, studyName) {
+  repoPath <- fs::path(repoFolder, repoName) |>
+    fs::path_expand()
+  
+  extrasPath <- fs::path(repoPath, "extras")
+  
+  if (toolType == "dbms") {
+    # Extract config block names if objects are passed
+    if (!is.character(configBlocks)) {
+      configBlocks <- purrr::map_chr(configBlocks, ~.x$configBlockName)
+    }
+    configBlocks <- paste0(configBlocks, collapse = "\", \"")
+  } else {
+    configBlocks <- ""
+  }
+  
+  # Create extras directory
+  fs::dir_create(extrasPath)
+  
+  # Read template and substitute using glue
+  testMainR <- fs::path_package("picard", "extras/test_main.R") |>
+    readr::read_file() |>
+    glue::glue()
+  
+  actionItem(glue::glue_col("Initialize Test Main Exec File: {green {fs::path(extrasPath, 'test_main.R')}}"))
+  readr::write_file(
+    x = testMainR,
+    file = fs::path(extrasPath, "test_main.R")
+  )
+  invisible(testMainR)
+}
+
+#' @title Save PR Reference Information
+#' @description Internal function that writes PR metadata to PENDING_PR.md for manual PR creation.
+#'   Saves branch name, target, title, and description for user reference.
+#' @param prMeta List. PR metadata from createPullRequest()
+#' @keywords internal
+save_pr_reference <- function(prMeta) {
+  tryCatch({
+    prFilePath <- fs::path(here::here(), "PENDING_PR.md")
+    
+    # Create PR reference file content
+    prContent <- c(
+      "# Pending Pull Request",
+      "",
+      glue::glue("**Created:** {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
+      "",
+      "## PR Details",
+      "",
+      glue::glue("- **Source Branch:** `{prMeta$branch}`"),
+      glue::glue("- **Target Branch:** `{prMeta$targetBranch}`"),
+      "",
+      "## Title",
+      "",
+      prMeta$title,
+      "",
+      "## Description",
+      "",
+      if (!is.null(prMeta$description)) prMeta$description else "No description provided",
+      "",
+      "---",
+      "",
+      "## Instructions",
+      "",
+      "1. Review the changes on the branch",
+      "2. Create a new PR in your Git provider with the details above",
+      "3. Ensure all checks pass",
+      "4. Merge to main when ready",
+      "5. Run `clearPendingPR()` to remove this file",
+      ""
+    )
+    
+    readr::write_lines(prContent, file = prFilePath)
+    cli::cli_alert_success("Saved PR reference to: {fs::path_rel(prFilePath)}")
+    
+  }, error = function(e) {
+    cli::cli_alert_warning("Failed to save PR reference: {e$message}")
+  })
+}
+
+#' @title Clear Pending PR Reference
+#' @description Removes the PENDING_PR.md file after PR has been created and merged.
+#'   Safe to call even if file doesn't exist.
+#' @return Logical. TRUE if file was deleted, FALSE if it didn't exist
+#' @export
+#' @examples
+#' \dontrun{
+#' # After merging PR to main
+#' clearPendingPR()
+#' }
+clearPendingPR <- function() {
+  prFilePath <- fs::path(here::here(), "PENDING_PR.md")
+  
+  if (file.exists(prFilePath)) {
+    tryCatch({
+      fs::file_delete(prFilePath)
+      cli::cli_alert_success("Removed: PENDING_PR.md")
+      return(invisible(TRUE))
+    }, error = function(e) {
+      cli::cli_alert_danger("Failed to remove PENDING_PR.md: {e$message}")
+      return(invisible(FALSE))
+    })
+  } else {
+    cli::cli_alert_info("PENDING_PR.md not found (nothing to clean up)")
+    return(invisible(FALSE))
+  }
 }

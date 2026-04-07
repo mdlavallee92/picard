@@ -37,6 +37,32 @@ get_current_branch <- function() {
   })
 }
 
+# Helper: Add git remote and push initialization commit
+git_remote_ulysses <- function(gitRemoteUrl, gitRemoteName = "origin") {
+  commitMessage <- "Prep Ulysses repo with remote"
+  
+  tryCatch({
+    # Stage all files
+    gert::git_add(files = ".")
+    
+    # Commit all files with standard message
+    gert::git_commit_all(message = commitMessage)
+    
+    # Add remote
+    gert::git_remote_add(url = gitRemoteUrl, name = gitRemoteName)
+    
+    # Push to remote
+    gert::git_push(remote = gitRemoteName)
+    
+    cli::cli_alert_success("Repository connected to remote: {gitRemoteUrl}")
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to connect to remote: {e$message}")
+    stop(e)
+  })
+  
+  invisible(gitRemoteUrl)
+}
+
 #' Validate Code State Before Pipeline Operations
 #' @description Ensures the repository is in a clean state (no uncommitted changes)
 #'   before running major pipeline operations. Returns the current commit SHA for

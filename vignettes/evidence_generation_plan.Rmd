@@ -1,0 +1,518 @@
+---
+title: "Evidence Generation Plan"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Evidence Generation Plan}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Introduction
+
+An *Evidence Generation Plan* (EGP) is a structured document that describes what evidence your RWE study will produce, for whom, and how that evidence addresses specific research questions. While Picard provides the technical infrastructure to organize code and results, an EGP provides the strategic framework that unifies your analyses.
+
+This vignette explains:
+
+- **Why an EGP matters:** Ensures your analysis choices are transparent and reproducible
+- **What goes in an EGP:** Standard components from planning through dissemination
+- **How to organize it:** Connecting EGP to Picard directory structure
+- **Integration with analyses:** Linking research questions to specific tasks and outputs
+
+An Evidence Generation Plan is not required to use Picard, but strongly recommended for:
+
+- Regulatory submissions (where transparency is required)
+- Collaborative studies (where decisions must be recorded)
+- High-stakes analyses (publications, policy recommendations)
+- Team onboarding (new members understand project scope)
+
+## Core Components of an EGP
+
+### 1. Research Question and Objectives
+
+Clearly state what you're investigating:
+
+```
+Primary Research Question:
+Do patients with type 2 diabetes initiated on glucagon-like peptide 1 receptor agonists
+have different cardiovascular outcomes compared to those initiated on sulfonylureas?
+
+Primary Objectives:
+- Compare all-cause mortality between groups
+- Compare acute myocardial infarction incidence
+- Compare hospitalization for heart failure
+
+Secondary Objectives:
+- Describe baseline characteristics of each treatment group
+- Examine treatment patterns and discontinuation rates
+- Identify effect modification by age, sex, and comorbidity
+```
+
+### 2. Study Design
+
+Document your analytical approach:
+
+```
+Design Type: Comparative cohort study
+
+Study Population:
+- Inclusion: Age ≥18, type 2 diabetes diagnosis before cohort entry
+- Exclusion: Prior exposure to either drug class
+- Cohort Entry: Date of first prescription for comparison drug
+
+Exposure Definition:
+- GLP-1 RA cohort: First prescription for any GLP-1 receptor agonist
+- Sulfonylurea cohort: First prescription for any sulfonylurea (excluding GLP-1 RA users)
+
+Time-at-Risk:
+- Start: Cohort entry date
+- End: Drug discontinuation (30-day grace period) or study end date (2024-12-31)
+```
+
+### 3. Phenotypic Definitions
+
+Link to your input manifests:
+
+```
+Cohort Definitions (see inputs/cohorts/cohortManifest.sqlite):
+
+ID 1 - Type 2 Diabetes Patients
+  - Inclusion criteria: [specific codes/algorithms]
+  - Lookback period: 365 days
+  
+ID 2 - GLP-1 Initiated Cohort
+  - Refinement of ID 1 with first GLP-1 exposure
+  
+ID 3 - Sulfonylurea Initiated Cohort
+  - Refinement of ID 1 with first sulfonylurea exposure
+
+Concept Set Definitions (see inputs/conceptSets/conceptSetManifest.sqlite):
+
+ID 1 - GLP-1 Receptor Agonists (exposure)
+ID 2 - Sulfonylureas (exposure)
+ID 3 - Acute Myocardial Infarction (outcome)
+ID 4 - Heart Failure Hospitalization (outcome)
+ID 5 - Chronic Comorbidities (covariates)
+```
+
+### 4. Analytical Approach
+
+Describe all statistical methods:
+
+```
+Primary Analysis:
+- Cohort design comparing GLP-1 RA vs. sulfonylurea initiation
+- Outcome: All-cause mortality
+- Time-to-event analysis with Cox proportional hazards regression
+- Adjustment for: Age, sex, baseline comorbidities (diabetes control, kidney function, 
+  cardiovascular disease history)
+- Propensity score: Caliper matching (1:1) with caliper width 0.1 SD
+
+Secondary Analyses:
+- Secondary outcomes (MI, HF hospitalization) using same analytic approach
+- Stratified analyses by: Age groups, sex, baseline A1c level
+- Sensitivity analyses: 
+  - Different propensity score approaches (weighting, stratification)
+  - Different propensity score specifications (add/remove variables)
+  - Different follow-up time definitions
+
+Diagnostics:
+- Propensity score distribution assessment
+- Covariate balance assessment (standardized differences)
+- Cohort entry definitions verification
+- Missing data assessment
+```
+
+### 5. Data Sources and Infrastructure
+
+Document where data comes from:
+
+```
+Data Sources:
+- Primary Database: Columbia University Irving Medical Center OMOP CDM (v5.4)
+- Secondary Database: Partners HealthCare OMOP CDM (v5.4)
+
+Database Characteristics:
+- Primary: Claims + EHR, 5M patients, coverage 2010-2024
+- Secondary: EHR, 2M patients, coverage 2015-2024
+
+CDM Version: OMOP Common Data Model v5.4
+Vocabulary Version: SNOMED CT 2024-01-01, RxNorm 2024-01-08
+```
+
+### 6. Analysis Schedule and Milestones
+
+Organize tasks with planned completion dates:
+
+```
+Phase 1: Data Preparation (Target: 2026-05-31)
+- Task 1: Generate base cohorts
+- Task 2: Verify cohort definitions
+- Task 3: Assess baseline characteristics
+
+Phase 2: Main Analysis (Target: 2026-07-31)
+- Task 3: Descriptive statistics
+- Task 4: Primary Cox regression
+- Task 5: Propensity score analysis
+
+Phase 3: Sensitivity & Secondary (Target: 2026-08-31)
+- Task 6: Sensitivity analyses
+- Task 7: Secondary outcomes
+- Task 8: Stratified analyses
+
+Phase 4: Dissemination (Target: 2026-09-30)
+- Task 9: Generate final results
+- Task 10: Create manuscript tables and figures
+```
+
+### 7. Outcomes and Deliverables
+
+Specify what you'll produce:
+
+```
+Primary Deliverable:
+- Manuscript for peer-reviewed journal
+
+Secondary Deliverables:
+- Technical report with methods and full results
+- Summary tables for OHDSI Network Study-a-thon
+- Sensitivity analysis appendix
+
+Planned Publications:
+- Main Results: Target journal (e.g., Diabetes Care)
+- Methodological: Discussion of propensity score approach
+- Data Note: Database characteristics and cohort diagnostics
+```
+
+## Organizing an EGP in Picard
+
+### File Structure
+
+Store your EGP in the project with versioning:
+
+```
+evidence_generation_plan/
+├── EGP_main_v1.0.docx          # Primary EGP document
+├── StudyDesign.md               # Design details in markdown
+├── AnalyticalCode.md            # Links to analysis tasks
+├── Outcomes.md                  # Outcome definitions & linkages
+└── ChangeLog.md                 # Versions and updates (with dates)
+```
+
+Or store directly in extras/:
+
+```
+extras/
+├── EGP_v1.0.docx
+├── evidence_generation_plan/
+│   ├── design.md
+│   └── methods.md
+└── test_main.R
+```
+
+### Example EGP in Markdown
+
+Create `evidence_generation_plan/StudyDesign.md`:
+
+```markdown
+# Evidence Generation Plan: Cardiovascular Risk in Type 2 Diabetes
+
+## Study Team
+
+- **Lead:** Jane Doe (Research Institute)
+- **Statistical Lead:** John Smith (Biostatistics)
+- **Data Analyst:** Sarah Johnson
+
+## Research Question
+
+Do patients with type 2 diabetes initiated on GLP-1 RAs have different CV outcomes 
+compared to sulfonylurea-initiated patients?
+
+## Study Design
+
+### Cohort Definition
+
+**See inputs/cohorts/cohortManifest.sqlite:**
+- ID 1: Type 2 Diabetes base population
+- ID 2: GLP-1 RA initiated users (derived from ID 1)
+- ID 3: Sulfonylurea initiated users (derived from ID 1)
+
+### Exposures & Outcomes
+
+**See inputs/conceptSets/conceptSetManifest.sqlite:**
+- Exposure: IDs 1 (GLP-1 RA), 2 (Sulfonylureas)
+- Primary Outcome: ID 3 (All-cause mortality)
+- Secondary Outcome: IDs 4 (MI), 5 (HF hospitalization)
+- Covariates: ID 6 (Comorbidities)
+
+### Analysis Tasks
+
+Analysis is organized in `analysis/tasks/`:
+- `01_buildCohorts.R`: Generate populations
+- `02_descriptiveStats.R`: Baseline characteristics (links to Objective 1)
+- `03_propensityScore.R`: PS calculation and matching
+- `04_primaryAnalysis.R`: Cox regression (Primary Objective)
+- `05_sensitivityAnalysis.R`: Robustness testing
+
+### Timeline
+
+- Phase 1 Data Prep: Complete by 2026-05-31
+- Phase 2 Analysis: Complete by 2026-07-31
+- Phase 3 Write-up: Complete by 2026-08-31
+
+## Key Decisions & Rationale
+
+### Why Cox regression?
+[Justification for time-to-event approach]
+
+### Why propensity score matching?
+[Justification for PS matching vs. other methods]
+
+### Why these covariates?
+[Justification based on causal DAG, published guidelines, etc.]
+```
+
+### Link EGP to Tasks
+
+In each analysis task, reference the relevant EGP section:
+
+```r
+#' Task: 04_primaryAnalysis.R
+#' 
+#' Evidence Generation Plan: Primary Cox Regression Analysis
+#' See evidence_generation_plan/StudyDesign.md#Analysis Tasks
+#' 
+#' Objectives addressed:
+#' - Primary Objective: Compare all-cause mortality between groups
+#' - Secondary Objective: Compare MI incidence
+#'
+#' Method: Cox proportional hazards regression with covariates
+#' Inputs:
+#' - Matched cohorts from task 03_propensityScore.R
+#' - Covariate data (concept sets in inputs/conceptSets/conceptSetManifest.sqlite)
+#'
+#' Output:
+#' - exec/results/[db]/[version]/04_primaryAnalysis/modelResults.csv
+#'
+
+library(picard)
+# ... rest of task code
+```
+
+### Version Your EGP
+
+When you make changes to the evidence plan, update both the EGP document and NEWS.md:
+
+```markdown
+## Version 1.1.0 (2026-04-15)
+
+### EGP Updates
+- Expanded primary analysis to include additional secondary outcomes
+- Added sensitivity analysis for subgroup by baseline kidney function
+- Updated timeline with three-week delay for database access issues
+```
+
+## Integration Patterns
+
+### Connecting Research Questions to Outputs
+
+Create a mapping document visible to the team:
+
+```
+evidence_generation_plan/RQ_to_Task_Mapping.md
+
+# Research Question → Task → Output Mapping
+
+## Primary RQ: Mortality Comparison
+
+Analysis Task: 04_primaryAnalysis.R
+Output File: exec/results/[db]/[version]/04_primaryAnalysis/cox_mortality.csv
+Result Table: dissemination/results/02_primary/table1_primaryResults.xlsx
+Manuscript Location: Main Text Table 2
+
+## Secondary RQ: MI Incidence
+
+Analysis Task: 04_primaryAnalysis.R (same task, different outcome)
+Output File: exec/results/[db]/[version]/04_primaryAnalysis/cox_mi.csv
+Result Table: dissemination/results/02_primary/table2_secondaryMI.xlsx
+Manuscript Location: Main Text Table 3
+
+## Descriptive RQ: Baseline Characteristics
+
+Analysis Task: 02_descriptiveStats.R
+Output File: exec/results/[db]/[version]/02_descriptiveStats/demographics.csv
+Result Table: dissemination/results/01_descriptive/table1_baseline.xlsx
+Manuscript Location: Main Text Table 2 (demographics section)
+```
+
+### Create an Analysis Dependency Chart
+
+```
+evidence_generation_plan/AnalysisDependencies.md
+
+# Analysis Task Dependencies
+
+Task 01 (Build Cohorts)
+    ↓
+    ├→ Task 02 (Descriptive Stats) [Primary Objective]
+    │   ↓
+    │   └→ dissemination/results/01_descriptive/
+    │
+    └→ Task 03 (Propensity Score)
+        ↓
+        └→ Task 04 (Primary Analysis) [Primary RQ]
+            ↓
+            └→ Task 05 (Sensitivity Analysis)
+                ↓
+                └→ dissemination/results/02_primary/
+└─→ Task 06 (Outcomes Review)
+    └→ dissemination/results/03_outcomes/
+```
+
+## Best Practices
+
+### Transparency
+
+Document all decisions and their rationale:
+
+```markdown
+## Covariate Selection Rationale
+
+We included the following variables based on published literature and clinical consensus:
+
+- Age: Fundamental risk factor for cardiovascular outcomes
+- Sex: Known effect modifier in diabetes management
+- A1c: Marker of glycemic control and disease severity
+- eGFR: Associated with cardiovascular risk and drug metabolism
+
+We did NOT include:
+- LDL cholesterol: Not reliably available in early follow-up period
+- Blood pressure: High missingness (56%) in claims data
+```
+
+### Pre-registration
+
+Consider registering your EGP before analysis to prevent bias:
+
+- ClinicalTrials.gov (regulatory/clinical trials)
+- OSF Registries (observational research)
+- Internal version control with locked "pre-analysis" tag
+
+```bash
+# Create a locked pre-analysis version
+git tag -a pre-analysis-locked -m "Pre-analysis EGP locked 2026-04-01"
+```
+
+### Evolution Tracking
+
+Document major changes and versions:
+
+```
+evidence_generation_plan/ChangeLog.md
+
+# EGP Change Log
+
+## Version 1.1.0 (2026-04-15)
+- Added secondary outcome: chronic kidney disease progression
+- Expanded age subgroups from 3 to 4 categories
+- Added sensitivity analysis for medication adherence
+
+**Rationale:** Clinical team requested kidney disease outcomes after initial literature review
+
+---
+
+## Version 1.0.0 (2026-03-01)
+- Initial evidence generation plan
+- Submitted to study committee for approval
+```
+
+### Team Communication
+
+Use your EGP as a communication tool with stakeholders:
+
+```
+README.md excerpt:
+
+## Research Question
+
+[From EGP]
+
+See `evidence_generation_plan/StudyDesign.md` for full details.
+
+## Expected Timeline
+
+Phase 1 (Data Prep): Weeks 1-4
+Phase 2 (Analysis): Weeks 5-8
+Phase 3 (Write-up): Weeks 9-12
+
+See evidence_generation_plan/ChangeLog.md for updates
+```
+
+## Regulatory Considerations
+
+For regulatory submissions, your EGP becomes a critical document:
+
+- **FDA submissions:** Concept ID mapping, covariate justification
+- **Payer submissions:** Evidence of methodological rigor and transparency
+- **OHDSI Network:** Community expectations for reproducible research
+
+Include in submissions:
+
+```
+Submission Appendix: Evidence Generation Plan
+
+A. Study Design and Objectives
+B. Population and Cohort Definitions (with ATLAS screenshots if applicable)
+C. Outcome, Exposure, and Covariate Definitions
+D. Analytical Approach (with propensity score diagnostics)
+E. Sensitivity Analyses and Robustness Testing
+F. Analysis Timeline and Milestones
+G. Study Team and Responsibilities
+
+[References to Picard repository structure and reproducible code]
+```
+
+## Example: Complete Minimal EGP
+
+```
+evidence_generation_plan/MinimalEGP.md
+
+# Evidence Generation Plan: [Study Name]
+
+##objective
+What cardiovascular effect does X treatment have vs Y comparator in Z population?
+
+## Structure
+- Cohorts: See inputs/cohorts/
+- Concept Sets: See inputs/conceptSets/
+- Analysis Code: See analysis/tasks/
+
+## Methods
+[1-2 paragraph summary]
+
+## Timeline
+- Task 01-02: By [date]
+- Task 03-05: By [date]
+- Results: By [date]
+
+## Output
+- Main results: dissemination/results/02_primary/
+- Sensitivity: dissemination/results/03_sensitivity/
+- Manuscript: [target journal]
+```
+
+This minimal version ensures key decisions are recorded without excessive documentation.
+
+## Next Steps
+
+1. **Create initial EGP:** Before launching analysis tasks
+2. **Link to code:** Reference EGP sections in task comments
+3. **Update regularly:** Track changes in ChangeLog
+4. **Share with team:** Use as onboarding and communication tool
+5. **Archive with results:** Include in final dissemination package
+
+## See Also
+
+- [The Ulysses Standard Repository Structure](picard_repository_structure.html) - Where EGP fits
+- [Launching a Study](launching_a_study.html) - Study setup
+- [Running the Pipeline](running_the_pipeline.html) - Executing analyses defined in EGP
+- [Post-Processing Steps](post_processing.html) - Converting EGP outputs to deliverables

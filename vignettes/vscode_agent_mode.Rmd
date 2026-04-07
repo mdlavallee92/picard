@@ -1,0 +1,251 @@
+---
+title: "VS Code Agent Mode Setup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{VS Code Agent Mode Setup}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Introduction
+
+Picard includes enhanced support for VS Code through agent mode customization. This enables context-aware code assistance, intelligent completions, and streamlined workflows within the VS Code editor.
+
+This vignette provides minimal setup instructions for enabling VS Code agent mode in your Picard project.
+
+## What is VS Code Agent Mode?
+
+Agent mode customization allows VS Code to:
+
+- Understand your Picard project structure and conventions
+- Provide context-aware code suggestions
+- Follow project-specific coding standards
+- Automate common development tasks
+- Enable intelligent refactoring and code generation
+
+This is optional—Picard projects work fine without VS Code integration. However, if you use VS Code, agent mode significantly improves the development experience.
+
+## Setting Up Agent Mode
+
+### Step 1: Create .instructions.md
+
+In your project root, create a `.instructions.md` file that describes your project structure and coding conventions:
+
+```markdown
+# Picard Study: [Study Name]
+
+## Project Structure
+
+This is a Picard RWE study organized as:
+
+- `analysis/tasks/`: Analysis code (R scripts named 01_, 02_, 03_, etc.)
+- `analysis/src/`: Helper functions and utilities
+- `inputs/cohorts/`: Cohort definitions and manifest
+- `inputs/conceptSets/`: Concept set definitions and manifest
+- `dissemination/results/`: Analysis output and formatted results
+- `exec/`: Pipeline execution logs and intermediate results
+- `extras/`: Development scripts and reference materials
+
+## Coding Standards
+
+### R Files
+
+- Use 2-space indentation
+- Follow tidyverse style with dplyr, ggplot2
+- All external function calls must be fully qualified: `package::function()`
+- Use roxygen comments for helper functions in analysis/src/
+
+### Task Files (in analysis/tasks/)
+
+- Begin with metadata comments explaining inputs/outputs
+- Use `testStudyTask()` for development iteration
+- Organize output to `exec/results/[db]/[version]/[taskname]/`
+
+### Configuration
+
+- Database settings stored in config.yml
+- Cohort IDs cross-referenced to inputs/cohorts/cohortManifest.sqlite
+- Concept set IDs cross-referenced to inputs/conceptSets/conceptSetManifest.sqlite
+
+## Key Functions
+
+- `testStudyPipeline()`: Run full pipeline in dev mode
+- `testStudyTask("taskname.R", "configBlock")`: Test single task
+- `execStudyPipeline(configBlock, updateType)`: Production run
+- `loadCohortManifest()`: Load cohort definitions
+- `loadConceptSetManifest()`: Load concept set definitions
+
+## Useful Commands
+
+- Run test pipeline: `source("extras/test_main.R")`
+- Run production pipeline: `source("main.R")`
+- Check logs: `ls -la exec/logs/`
+```
+
+Save this to version control:
+
+```bash
+git add .instructions.md
+git commit -m "Add VS Code agent mode instructions"
+```
+
+### Step 2: Create .prompt.md (Optional)
+
+For more sophisticated agent behavior, create `.prompt.md` to customize the AI assistant's responses:
+
+```markdown
+# Picard Study Code Assistant
+
+You are helping with a Picard RWE (real-world evidence) study repository.
+
+## Context
+
+This project analyzes real-world healthcare data using the OMOP Common Data Model.
+
+**Key locations:**
+- Study configuration: config.yml
+- Analysis code: analysis/tasks/
+- Database manifests: inputs/cohorts/, inputs/conceptSets/
+- Results: exec/results/, dissemination/
+
+**Conventions:**
+- Analysis tasks are numbered 01_, 02_, etc. in order of execution
+- All results organized by database name and version
+- Cohorts and concept sets tracked in SQLite manifests
+
+## User's Typical Tasks
+
+1. Creating new analysis tasks
+2. Modifying cohort/concept set definitions
+3. Debugging pipeline execution
+4. Post-processing results
+
+## Tone and Style
+
+Keep responses concise, practical, and focused on Picard-specific patterns.
+Reference vignettes from picard package when appropriate.
+```
+
+### Step 3: Create .code-workspace (Optional)
+
+For multi-root workspace, create `.code-workspace`:
+
+```json
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "[Study Name]"
+    }
+  ],
+  "settings": {
+    "[r]": {
+      "editor.defaultFormatter": "REditorSupport.r",
+      "editor.formatOnSave": true
+    },
+    "r.rpath.linux": "/usr/bin/R",
+    "r.rpath.windows": "C:\\Program Files\\R\\R-4.x.x\\bin\\R.exe",
+    "r.lsp.debug": false,
+    "r.lsp.path": "",
+    "r.rterm.windows": "C:\\Program Files\\R\\R-4.x.x\\bin\\Rterm.exe"
+  },
+  "extensions": {
+    "recommendations": [
+      "REditorSupport.r",
+      "GitHub.copilot",
+      "quarto.quarto"
+    ]
+  }
+}
+```
+
+This ensures recommended extensions are installed when opening the project.
+
+## Using Agent Mode in VS Code
+
+### Opening the Project
+
+Open your Picard repository in VS Code:
+
+```bash
+code /path/to/picard/project
+```
+
+VS Code will:
+1. Read `.instructions.md` for project context
+2. Load `.prompt.md` for customization
+3. Offer project-specific code suggestions
+
+### Asking for Help
+
+Use Copilot Chat (Ctrl+Shift+L or Cmd+Shift+L) to get project-aware assistance:
+
+```
+"How should I structure a new analysis task?"
+→ Response cites picard conventions, suggests metadata pattern
+
+"I need to add a new cohort. Where should I put it?"
+→ Response references inputs/cohorts/ and cohortManifest.sqlite
+
+"Help me debug this task error"
+→ Response suggests checking exec/logs/ and using testStudyTask()
+```
+
+### Code Completions
+
+With agent mode enabled, code completions will:
+
+- Suggest `testStudyPipeline()` when working in test_main.R
+- Auto-complete cohort references from manifest
+- Suggest appropriate output paths based on file location
+- Recommend function calls from picard package
+
+## Minimal Setup
+
+If you only want basic VS Code support without customization, just create `.instructions.md` with your project description. More advanced customization is optional.
+
+## VS Code Extensions for Picard
+
+Recommended extensions in your `.code-workspace`:
+
+- **REditorSupport.r**: R language support
+- **GitHub.copilot**: AI code assistance
+- **quarto.quarto**: Quarto/R Markdown rendering
+- **ms-vscode.makefile-tools**: Run tasks (optional)
+- **eamodio.gitlens**: Git integration (optional)
+
+Install manually or through `.code-workspace` recommendations.
+
+## Troubleshooting
+
+### Agent doesn't recognize project structure
+
+Ensure `.instructions.md` exists in project root and contains correct paths.
+
+### Code suggestions don't match Picard conventions
+
+Update `.instructions.md` to be more specific about your patterns.
+
+### Extension conflicts
+
+If R extension causes issues, disable and use community LSP:
+
+```json
+{
+  "r.lsp.debug": false,
+  "r.lsp.path": "none"
+}
+```
+
+## Next Steps
+
+1. Create `.instructions.md` with your project details
+2. Commit to git
+3. Open project in VS Code
+4. Use Copilot Chat for project-aware assistance
+
+## See Also
+
+- [The Ulysses Standard Repository Structure](picard_repository_structure.html) - Project organization
+- [Launching a Study](launching_a_study.html) - Initial project setup
+- [Running the Pipeline](running_the_pipeline.html) - Development workflow
