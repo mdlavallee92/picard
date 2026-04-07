@@ -4,13 +4,21 @@
 \alias{execStudyPipeline}
 \title{Function to execute all study task in analysis folder on set of configBlock}
 \usage{
-execStudyPipeline(configBlock, updateType, env = rlang::caller_env())
+execStudyPipeline(
+  configBlock,
+  updateType,
+  skipRenv = FALSE,
+  env = rlang::caller_env()
+)
 }
 \arguments{
 \item{configBlock}{name of one or multiple configBlock to use in the execution}
 
 \item{updateType}{the type of version increment: 'major', 'minor', or 'patch'. The current version
 will be read from config.yml and incremented accordingly before pipeline execution.}
+
+\item{skipRenv}{Logical. If TRUE, skips renv validation and snapshotting. Defaults to FALSE.
+Useful for testing when renv causes issues. Default: FALSE}
 
 \item{env}{the execution environment}
 }
