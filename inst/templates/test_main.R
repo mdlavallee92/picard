@@ -44,7 +44,7 @@ library(tidyverse)
 # Database sectors to traverse (from config.yml)
 dbIds <- c("{configBlocks}")
 
-cli::cli_alert_info("Setting course for database sectors: {paste(dbIds, collapse = ', ')}")
+cli::cli_alert_info("Setting course for database sectors: {{paste(dbIds, collapse = ', ')}}")
 
 # ════════════════════════════════════════════════════════════════════════════════
 # D. Engage Test Pipeline ────────────────────────────────────────────────────────

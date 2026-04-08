@@ -43,7 +43,7 @@ initStudyHubFiles <- function(repoName,
   egp <- readr::read_file(
     file = fs::path_package("picard", "templates/EGP.qmd")
   ) |>
-    glue::glue()
+    glue::glue(.open = "<<", .close = ">>")
 
   writeFileAndNotify(
     x = egp,
@@ -65,7 +65,7 @@ initStudyHubFiles <- function(repoName,
   resultsFile <- readr::read_file(
     file = fs::path_package("picard", "templates/resultsFile.qmd")
   ) |>
-    glue::glue()
+    glue::glue(.open = "<<", .close = ">>")
 
   writeFileAndNotify(
     x = resultsFile,
@@ -76,7 +76,7 @@ initStudyHubFiles <- function(repoName,
   # setup quarto css file
   cssFile <- fs::path_package("picard", "templates/style.css") |>
     readr::read_file() |>
-    glue::glue()
+    glue::glue(.open = "${", .close = "}")
 
   writeFileAndNotify(
     x = cssFile,
