@@ -19,7 +19,7 @@ comprehensive repository initialization.
 \item \code{toolType}: Tool type, either "dbms" or "external" (read/write)
 \item \code{studyMeta}: StudyMeta object containing metadata (read/write)
 \item \code{gitRemote}: Optional git remote URL (read/write)
-\item \code{renvLock}: Optional path to renv lock file (read/write)
+\item \code{renvLockFile}: Optional path to renv lock file (read/write)
 }
 }
 
@@ -43,7 +43,7 @@ comprehensive repository initialization.
 
 \item{\code{gitRemote}}{Optional URL for git remote repository. Can be read or set with validation.}
 
-\item{\code{renvLock}}{Optional path to renv lock file for reproducibility. Can be read or set with validation.}
+\item{\code{renvLockFile}}{Optional path to renv lock file for reproducibility. Can be read or set with validation.}
 }
 \if{html}{\out{</div>}}
 }
@@ -68,7 +68,7 @@ Initialize a new UlyssesStudy instance with configuration parameters.
   studyMeta,
   execOptions,
   gitRemote = NULL,
-  renvLock = NULL
+  renvLockFile = NULL
 )}\if{html}{\out{</div>}}
 }
 
@@ -87,7 +87,7 @@ Initialize a new UlyssesStudy instance with configuration parameters.
 
 \item{\code{gitRemote}}{Character string. Optional URL for git remote repository.}
 
-\item{\code{renvLock}}{Character string. Optional path to renv lock file for reproducibility.}
+\item{\code{renvLockFile}}{Character string. Optional path to renv lock file for reproducibility.}
 }
 \if{html}{\out{</div>}}
 }

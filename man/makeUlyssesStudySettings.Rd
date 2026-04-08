@@ -11,7 +11,7 @@ makeUlyssesStudySettings(
   studyMeta,
   execOptions = NULL,
   gitRemote = NULL,
-  renvLock = NULL
+  renvLockFile = NULL
 )
 }
 \arguments{
@@ -25,7 +25,7 @@ makeUlyssesStudySettings(
 
 \item{gitRemote}{a remote url used to clone and set remote git}
 
-\item{renvLock}{file path to a renvLock file}
+\item{renvLockFile}{file path to a renvLockFile file}
 }
 \value{
 A UlyssesStudy R6 class with the ulysses study details to make
