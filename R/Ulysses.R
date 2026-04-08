@@ -330,16 +330,55 @@ UlyssesStudy <- R6::R6Class(
     .initAgent = function() {
       repoPath <- private$.getRepoPath()
       tryCatch({
+        # Create .agent folder
         agent_folder <- fs::path(repoPath, ".agent")
         fs::dir_create(agent_folder)
         
-        agent_template <- fs::path_package("picard", "templates/agent_skills.md") |>
+        # Prepare template substitutions for the study
+        studyName <- private$.studyMeta$studyTitle
+        projectName <- ifelse(
+          !is.null(private$.studyMeta$projectName) && private$.studyMeta$projectName != "",
+          private$.studyMeta$projectName,
+          private$.repoName
+        )
+        databaseLabel <- "Database"
+        toolType <- private$.toolType
+        repoName <- private$.repoName
+        
+        # Read and substitute copilot-instructions.md template
+        instructions_template <- fs::path_package("picard", "agent/copilot-instructions.md") |>
           readr::read_file()
         
-        agent_file <- fs::path(agent_folder, "agent_skills.md")
-        readr::write_file(x = agent_template, file = agent_file)
+        instructions_content <- glue::glue(instructions_template)
         
-        cli::cli_alert_success("Created {.file {fs::path_rel(agent_file)}}")
+        instructions_file <- fs::path(agent_folder, "copilot-instructions.md")
+        readr::write_file(x = instructions_content, file = instructions_file)
+        
+        cli::cli_alert_success("Created {.file {fs::path_rel(instructions_file)}}")
+        
+        # Copy reference documentation files
+        reference_docs_folder <- fs::path(agent_folder, "reference-docs")
+        fs::dir_create(reference_docs_folder)
+        
+        # Get list of reference files from inst/agent
+        agent_package_folder <- fs::path_package("picard", "agent")
+        reference_files <- fs::dir_ls(
+          agent_package_folder,
+          regexp = "^\\d{2}-.*\\.md$",
+          recurse = FALSE
+        )
+        
+        # Copy each reference file
+        purrr::walk(reference_files, function(ref_file) {
+          base_name <- fs::path_file(ref_file)
+          dest_file <- fs::path(reference_docs_folder, base_name)
+          fs::file_copy(ref_file, dest_file, overwrite = TRUE)
+        })
+        
+        cli::cli_alert_success(
+          "Created {.file {fs::path_rel(reference_docs_folder)}} with {length(reference_files)} reference documents"
+        )
+        
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize agent configuration: {e$message}")
         stop(e)
