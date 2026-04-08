@@ -575,3 +575,137 @@ makeSrcSqlFile <- function(
   invisible(sqlTemplate)
 
 }
+
+#' Generate Print-Friendly Cohort Documentation from JSON
+#' @description Converts CIRCE-based JSON cohort definitions to human-readable R Markdown files
+#'   using CirceR print-friendly formatting. Preserves category subdirectories (e.g., target/, comparator/)
+#'   in output structure.
+#' @param cohorts_dir Character. Path to cohorts folder containing json/ subdirectory.
+#'   Default: "inputs/cohorts" (Ulysses standard structure)
+#' @param output_base Character. Path to base output directory where printFriendly/ subdirectory
+#'   will be created. Default: "AI_translation" (created at repo root, separate from inputs/)
+#' @param verbose Logical. Print progress messages. Default: TRUE
+#' @return Invisibly returns character vector of generated file paths
+#' @details
+#' Input folder structure expected:
+#' ```
+#' inputs/cohorts/
+#'   └── json/
+#'       ├── target/
+#'       │   ├── cohort1.json
+#'       │   └── cohort2.json
+#'       └── comparator/
+#'           └── cohort3.json
+#' ```
+#'
+#' Output folder structure created:
+#' ```
+#' AI_translation/
+#'   └── printFriendly/
+#'       ├── target/
+#'       │   ├── cohort1 - cohort_print_friendly.Rmd
+#'       │   └── cohort2 - cohort_print_friendly.Rmd
+#'       └── comparator/
+#'           └── cohort3 - cohort_print_friendly.Rmd
+#' ```
+#'
+#' Each generated Rmd file contains a human-readable specification of the cohort definition
+#' suitable for publication or documentation. CirceR must be installed.
+#' @export
+#' @examples
+#' \dontrun{
+#'   # Generate print-friendly files with defaults
+#'   makePrintFriendlyFile()
+#'
+#'   # Custom locations
+#'   makePrintFriendlyFile(
+#'     cohorts_dir = "path/to/cohorts",
+#'     output_base = "path/to/output"
+#'   )
+#' }
+makePrintFriendlyFile <- function(cohorts_dir = "inputs/cohorts",
+                                  output_base = "AI_translation",
+                                  verbose = TRUE) {
+
+  # Set up paths
+  json_dir <- file.path(cohorts_dir, "json")
+  output_dir <- file.path(output_base, "printFriendly")
+
+  # Validate input directory
+  if (!dir.exists(json_dir)) {
+    cli::cli_abort("json_dir not found: {json_dir}")
+  }
+
+  # Check CirceR is available
+  if (!requireNamespace("CirceR", quietly = TRUE)) {
+    cli::cli_abort(
+      "Package 'CirceR' is required.",
+      "i" = "Install with: remotes::install_github('ohdsi/CirceR')"
+    )
+  }
+
+  # Find all JSON files
+  json_paths <- list.files(json_dir, pattern = "\\.json$", full.names = TRUE, recursive = TRUE)
+
+  if (length(json_paths) == 0) {
+    cli::cli_abort("No .json files found in {json_dir}")
+  }
+
+  if (verbose) {
+    cli::cli_alert_info("Found {length(json_paths)} JSON file(s) to process")
+  }
+
+  # Process each JSON file
+  output_files <- character()
+
+  for (json_path in json_paths) {
+    cohort_basename <- tools::file_path_sans_ext(basename(json_path))
+
+    # Preserve category subfolder structure (e.g., target/, comparator/)
+    rel_dir <- dirname(sub(
+      paste0("^", normalizePath(json_dir), "/?"),
+      "",
+      normalizePath(json_path)
+    ))
+
+    category_out_dir <- if (rel_dir == ".") output_dir else file.path(output_dir, rel_dir)
+
+    # Create output directory if needed
+    if (!dir.exists(category_out_dir)) {
+      dir.create(category_out_dir, recursive = TRUE)
+      if (verbose) {
+        cli::cli_alert_success("Created: {fs::path_rel(category_out_dir)}")
+      }
+    }
+
+    # Convert JSON to print-friendly Rmd
+    tryCatch(
+      {
+        json_text <- paste(readLines(json_path, warn = FALSE), collapse = "\n")
+        cohort_def <- CirceR::cohortExpressionFromJson(json_text)
+        rmd_content <- CirceR::cohortPrintFriendly(cohort_def)
+
+        # Write output file
+        out_rmd <- file.path(category_out_dir, paste0(cohort_basename, " - cohort_print_friendly.Rmd"))
+        writeLines(rmd_content, out_rmd)
+        output_files <- c(output_files, out_rmd)
+
+        if (verbose) {
+          cli::cli_alert_success("Wrote: {fs::path_rel(out_rmd)}")
+        }
+      },
+      error = function(e) {
+        cli::cli_alert_danger("Error processing {basename(json_path)}: {e$message}")
+      }
+    )
+  }
+
+  # Summary
+  if (verbose) {
+    cli::cli_alert_success("Generated {length(output_files)} print-friendly Rmd file(s)")
+    cli::cli_alert_info("Output location: {fs::path_rel(output_dir)}")
+  }
+
+  invisible(output_files)
+}
+
