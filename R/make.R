@@ -89,7 +89,7 @@ makeExecOptions <- function(dbms,
 #' @param studyMeta a StudyMeta R6 class with the details describing the study
 #' @param execOptions a ExecOptions R6 class with the execution details needed for the study
 #' @param gitRemote a remote url used to clone and set remote git
-#' @param renvLock file path to a renvLock file
+#' @param renvLockFile file path to a renvLockFile file
 #' @returns A UlyssesStudy R6 class with the ulysses study details to make
 #' @export
 makeUlyssesStudySettings <- function(repoName,
@@ -98,7 +98,7 @@ makeUlyssesStudySettings <- function(repoName,
                                      studyMeta,
                                      execOptions = NULL,
                                      gitRemote = NULL,
-                                     renvLock = NULL) {
+                                     renvLockFile = NULL) {
   UlyssesStudy$new(
     repoName = repoName,
     repoFolder = repoFolder,
@@ -106,7 +106,7 @@ makeUlyssesStudySettings <- function(repoName,
     studyMeta = studyMeta,
     execOptions = execOptions,
     gitRemote = gitRemote,
-    renvLock = renvLock
+    renvLockFile = renvLockFile
   )
 }
 
@@ -391,5 +391,187 @@ makeTaskFile <- function(
   }
 
   invisible(taskTemplate)
+
+}
+
+#' @title Create a Source Utility File
+#' @description Creates a new R script in the analysis/src folder for storing reusable utility functions.
+#'   Unlike task files, source files have no naming conventions or execution order requirements.
+#' @param fileName The name of the source file (e.g., "custom_analysis_functions")
+#' @param author The name of the author. Defaults to template text if NULL
+#' @param description A brief description of what the utilities in this file do. Defaults to template text if NULL
+#' @param projectPath The path to the project (defaults to current project)
+#' @param openFile Whether to open the file after creating it (default TRUE)
+#' @return Invisible character string containing the template content
+#' @details Source files are utility files that contain reusable functions sourced by one or more task files.
+#'   They have no naming convention requirements and execute in no particular order.
+#'   Create them as you need utility functions to avoid code duplication across tasks.
+#' @export
+#' @examples
+#' \dontrun{
+#' # Create a source file for custom analysis functions
+#' makeSrcFile(
+#'   fileName = "custom_analysis_functions",
+#'   author = "Jane Doe",
+#'   description = "Helper functions for cohort calculations and data validation"
+#' )
+#'
+#' # Create with minimal arguments (uses template defaults)
+#' makeSrcFile(fileName = "plotting_utilities")
+#' }
+makeSrcFile <- function(
+    fileName,
+    author = NULL,
+    description = NULL,
+    projectPath = here::here(),
+    openFile = TRUE) {
+
+  srcFolderPath <- fs::path(projectPath, "analysis/src")
+
+  # Ensure src directory exists
+  fs::dir_create(srcFolderPath, recurse = TRUE)
+
+  # Clean up filename
+  fileName <- snakecase::to_snake_case(fileName)
+
+  # Set defaults
+  if (is.null(author)) {
+    author <- "ADD AUTHOR NAME HERE"
+  }
+  if (is.null(description)) {
+    description <- "Reusable utility functions"
+  }
+
+  # Get study name from config
+  studyName <- config::get("projectName", file = fs::path(projectPath, "config.yml"))
+
+  # Read and populate template
+  srcTemplate <- fs::path_package(
+    package = "picard",
+    "templates/src.R"
+  ) |>
+    readr::read_file() |>
+    glue::glue(
+      fileName = fileName,
+      author = author,
+      description = description,
+      studyName = studyName
+    )
+
+  # Display message
+  txt <- glue::glue_col("Write {cyan {fileName}.R} to {yellow {srcFolderPath}}")
+  cli::cat_bullet(
+    txt,
+    bullet = "tick",
+    bullet_col = "green"
+  )
+
+  # Write the file
+  readr::write_file(
+    x = srcTemplate,
+    file = fs::path(srcFolderPath, fileName, ext = "R")
+  )
+
+  if (openFile) {
+    rstudioapi::navigateToFile(file = fs::path(srcFolderPath, fileName, ext = "R"))
+    cli::cat_bullet(
+      "Navigating to new source file",
+      bullet = "info",
+      bullet_col = "blue"
+    )
+  }
+
+  invisible(srcTemplate)
+
+}
+
+#' @title Create a SqlRender SQL File
+#' @description Creates a new SQL script in the analysis/src/sql folder for storing parameterized OMOP queries.
+#'   These files are rendered using SqlRender and executed against the CDM.
+#' @param fileName The name of the SQL file (e.g., "condition_occurrence_query")
+#' @param author The name of the author. Defaults to template text if NULL
+#' @param description A brief description of what this query does. Defaults to template text if NULL
+#' @param projectPath The path to the project (defaults to current project)
+#' @param openFile Whether to open the file after creating it (default TRUE)
+#' @return Invisible character string containing the template content
+#' @details SQL files in src/sql are parameterized queries meant to be rendered with SqlRender::render()
+#'   before execution. They should use @ notation for parameters (e.g., @cdmDatabaseSchema).
+#'   Document all parameters used in your query with comments at the top of the file.
+#' @export
+#' @examples
+#' \dontrun{
+#' # Create a SQL query for analyzing condition_occurrence
+#' makeSrcSqlFile(
+#'   fileName = "condition_occurrence_counts",
+#'   author = "Jane Doe",
+#'   description = "Count conditions by month in the CDM"
+#' )
+#'
+#' # Create with minimal arguments
+#' makeSrcSqlFile(fileName = "get_person_demographics")
+#' }
+makeSrcSqlFile <- function(
+    fileName,
+    author = NULL,
+    description = NULL,
+    projectPath = here::here(),
+    openFile = TRUE) {
+
+  sqlFolderPath <- fs::path(projectPath, "analysis/src/sql")
+
+  # Ensure sql directory exists
+  fs::dir_create(sqlFolderPath, recurse = TRUE)
+
+  # Clean up filename
+  fileName <- snakecase::to_snake_case(fileName)
+
+  # Set defaults
+  if (is.null(author)) {
+    author <- "ADD AUTHOR NAME HERE"
+  }
+  if (is.null(description)) {
+    description <- "SqlRender parameterized query"
+  }
+
+  # Get study name from config
+  studyName <- config::get("projectName", file = fs::path(projectPath, "config.yml"))
+
+  # Read and populate template
+  sqlTemplate <- fs::path_package(
+    package = "picard",
+    "templates/src_sql.sql"
+  ) |>
+    readr::read_file() |>
+    glue::glue(
+      fileName = fileName,
+      author = author,
+      description = description,
+      studyName = studyName
+    )
+
+  # Display message
+  txt <- glue::glue_col("Write {cyan {fileName}.sql} to {yellow {sqlFolderPath}}")
+  cli::cat_bullet(
+    txt,
+    bullet = "tick",
+    bullet_col = "green"
+  )
+
+  # Write the file
+  readr::write_file(
+    x = sqlTemplate,
+    file = fs::path(sqlFolderPath, fileName, ext = "sql")
+  )
+
+  if (openFile) {
+    rstudioapi::navigateToFile(file = fs::path(sqlFolderPath, fileName, ext = "sql"))
+    cli::cat_bullet(
+      "Navigating to new SQL file",
+      bullet = "info",
+      bullet_col = "blue"
+    )
+  }
+
+  invisible(sqlTemplate)
 
 }

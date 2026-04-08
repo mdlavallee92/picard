@@ -2,18 +2,41 @@
 % Please edit documentation in R/execute.R
 \name{execStudyPipeline}
 \alias{execStudyPipeline}
-\title{Function to execute all study task in analysis folder on set of configBlock}
+\title{Production Study Pipeline Execution}
 \usage{
-execStudyPipeline(configBlock, updateType, env = rlang::caller_env())
+execStudyPipeline(
+  configBlock,
+  updateType,
+  skipRenv = FALSE,
+  env = rlang::caller_env()
+)
 }
 \arguments{
-\item{configBlock}{name of one or multiple configBlock to use in the execution}
+\item{configBlock}{Character or character vector. Name(s) of config block(s) to use.}
 
-\item{updateType}{the type of version increment: 'major', 'minor', or 'patch'. The current version
-will be read from config.yml and incremented accordingly before pipeline execution.}
+\item{updateType}{Character. Type of version increment: 'major', 'minor', or 'patch'.
+\itemize{
+\item MAJOR: Breaking changes
+\item MINOR: New features, backward compatible
+\item PATCH: Bug fixes, no new features
+}}
 
-\item{env}{the execution environment}
+\item{skipRenv}{Logical. If TRUE, skips renv validation. Defaults to FALSE.
+Useful for testing issues. Default: FALSE}
+
+\item{env}{The execution environment. Defaults to caller environment.}
+}
+\value{
+Invisibly returns task results list
 }
 \description{
-Function to execute all study task in analysis folder on set of configBlock
+Executes the full study pipeline in production mode with full validation,
+version management, and reproducibility tracking. Creates a release branch, runs
+the complete pipeline, provides PR instructions, and saves reference to PENDING_PR.md.
+}
+\examples{
+\dontrun{
+# Run production pipeline with patch version increment
+execStudyPipeline(configBlock = "myConfig", updateType = "patch")
+}
 }

@@ -29,7 +29,7 @@
 #' - `toolType`: Tool type, either "dbms" or "external" (read/write)
 #' - `studyMeta`: StudyMeta object containing metadata (read/write)
 #' - `gitRemote`: Optional git remote URL (read/write)
-#' - `renvLock`: Optional path to renv lock file (read/write)
+#' - `renvLockFile`: Optional path to renv lock file (read/write)
 #'
 #' ## Methods
 #'
@@ -49,7 +49,7 @@ UlyssesStudy <- R6::R6Class(
     #' @param studyMeta StudyMeta object. Contains study metadata and configuration.
     #' @param execOptions ExecOptions object. Contains execution settings and options.
     #' @param gitRemote Character string. Optional URL for git remote repository.
-    #' @param renvLock Character string. Optional path to renv lock file for reproducibility.
+    #' @param renvLockFile Character string. Optional path to renv lock file for reproducibility.
     #'
     #' @return Invisibly returns self for method chaining.
     initialize = function(repoName,
@@ -58,7 +58,7 @@ UlyssesStudy <- R6::R6Class(
                           studyMeta,
                           execOptions,
                           gitRemote = NULL,
-                          renvLock = NULL
+                          renvLockFile = NULL
     ) {
 
       checkmate::assert_string(x = repoName, min.chars = 1)
@@ -77,8 +77,8 @@ UlyssesStudy <- R6::R6Class(
       checkmate::assert_string(x = gitRemote, null.ok = TRUE)
       private[[".gitRemote"]] <- gitRemote
 
-      checkmate::assert_string(x = renvLock, null.ok = TRUE)
-      private[[".renvLock"]] <- renvLock
+      checkmate::assert_string(x = renvLockFile, null.ok = TRUE)
+      private[[".renvLockFile"]] <- renvLockFile
     },
 
     #' @description
@@ -120,11 +120,16 @@ UlyssesStudy <- R6::R6Class(
         private$.initConfigFile()
         private$.initQuarto()
         private$.initMainExec()
+        private$.initTestMainExec()
         private$.initAgent()
         
         # Step 4: Initialize git
         if (verbose) cli::cli_inform("Initializing git repository...")
         private$.initGit()
+        
+        # Step 5: Add renv lock file if supplied
+        if (verbose) cli::cli_inform("Setting up renv configuration...")
+        private$.addRenvLockFile()
         
         cli::cli_alert_success("Repository successfully initialized at {repoPath}")
         
@@ -148,7 +153,7 @@ UlyssesStudy <- R6::R6Class(
     .studyMeta = NULL,
     .execOptions = NULL,
     .gitRemote = NULL,
-    .renvLock = NULL,
+    .renvLockFile = NULL,
 
     # Helper method to get expanded repository path
     .getRepoPath = function() {
@@ -224,10 +229,9 @@ UlyssesStudy <- R6::R6Class(
         gert::git_init(repoPath)
         
         if (!is.null(private$.gitRemote)) {
-          addGitRemoteToUlysses(
+          git_remote_ulysses(
             gitRemoteUrl = private$.gitRemote,
-            gitRemoteName = "origin",
-            commitMessage = "Initialize Ulysses Repo for study"
+            gitRemoteName = "origin"
           )
         } else {
           gert::git_add(files = ".")
@@ -238,6 +242,35 @@ UlyssesStudy <- R6::R6Class(
         cli::cli_alert_danger("Failed to initialize git: {e$message}")
         stop(e)
       })
+      invisible(NULL)
+    },
+
+    .addRenvLockFile = function() {
+      repoPath <- private$.getRepoPath()
+      
+      if (!is.null(private$.renvLockFile)) {
+        tryCatch({
+          # Verify source file exists
+          if (!fs::file_exists(private$.renvLockFile)) {
+            stop("renvLockFile does not exist: ", private$.renvLockFile)
+          }
+          
+          # Copy file to repository root
+          fs::file_copy(
+            path = private$.renvLockFile,
+            new_path = fs::path(repoPath, "renv.lock"),
+            overwrite = TRUE
+          )
+          
+          cli::cli_alert_success("renv.lock file copied to {fs::path_rel(repoPath)}")
+        }, error = function(e) {
+          cli::cli_alert_danger("Failed to copy renv.lock file: {e$message}")
+          stop(e)
+        })
+      } else {
+        cli::cli_alert_info("No renvLockFile supplied. Consider running {.code renv::init()} in your project to set up a reproducible environment.")
+      }
+      
       invisible(NULL)
     },
 
@@ -272,6 +305,23 @@ UlyssesStudy <- R6::R6Class(
         )
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize main execution file: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
+    },
+
+    .initTestMainExec = function() {
+      tryCatch({
+        addTestMainFile(
+          repoName = private$.repoName,
+          repoFolder = private$.repoFolder,
+          toolType = private$.toolType,
+          configBlocks = private$.execOptions$dbConnectionBlocks,
+          studyName = private$.studyMeta$studyTitle
+        )
+        cli::cli_alert_success("Created test flight script: {.file {fs::path(private$.repoName, 'extras/test_main.R')}}")
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize test execution file: {e$message}")
         stop(e)
       })
       invisible(NULL)
@@ -337,12 +387,12 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field gitRemote}")
     },
 
-    #' @field renvLock Optional path to renv lock file for reproducibility. Can be read or set with validation.
-    renvLock = function(value) {
-      if (missing(value)) return(private$.renvLock)
+    #' @field renvLockFile Optional path to renv lock file for reproducibility. Can be read or set with validation.
+    renvLockFile = function(value) {
+      if (missing(value)) return(private$.renvLockFile)
       checkmate::assert_string(x = value, null.ok = TRUE)
-      private[[".renvLock"]] <- value
-      cli::cli_alert_info("Updated {.field renvLock}")
+      private[[".renvLockFile"]] <- value
+      cli::cli_alert_info("Updated {.field renvLockFile}")
     }
   )
 )
@@ -890,7 +940,7 @@ listDefaultFolders <- function(repoPath) {
   analysisFolders <- c("src", "tasks")
   execFolders <- c('logs', 'results')
   inputFolders <- c("cohorts/json", "cohorts/sql", "conceptSets/json")
-  disseminationFolders <- c("quarto", "export", "documents")
+  disseminationFolders <- c("quarto", "export/merge", "export/pretty", "export/studyHubOutput", "documents")
 
   folders <- c(
     paste('inputs', inputFolders, sep = "/"),
