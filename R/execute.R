@@ -1116,7 +1116,7 @@ addTestMainFile <- function(repoName, repoFolder, toolType, configBlocks, studyN
   fs::dir_create(extrasPath)
   
   # Read template and substitute using glue
-  testMainR <- fs::path_package("picard", "extras/test_main.R") |>
+  testMainR <- fs::path_package("picard", "templates/test_main.R") |>
     readr::read_file() |>
     glue::glue()
   

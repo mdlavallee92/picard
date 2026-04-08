@@ -1,5 +1,5 @@
 ---
-title: {studyTitle}
+title: <<studyTitle>>
 subtitle: Evidence Generation Plan 
 date: last-modified
 format:
