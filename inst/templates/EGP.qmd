@@ -19,28 +19,129 @@ format:
       gutter-width: 50px
 ---
 
-# Background {{#sec-background}}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
 
-## Rationale {{#sec-rationale}}
+# About This Document
 
-**EXAMPLES PLEASE MODIFY**
+This Evidence Generation Plan (EGP) defines the analytical experiment that your Picard pipeline will conduct. It specifies:
 
-The purpose of this study is to characterize patients with disease x for an internal analysis.
+- **Who** is included in study populations  
+- **What** gets measured (outcomes, characteristics, treatments)
+- **When** measurements are taken (baseline windows, follow-up periods)
+- **How** calculations are performed (numerators, denominators, lookback periods)
+- **Why** each choice was made (justification and rationale)
 
-## Research Questions {{#sec-questions}}
+Your Picard code implements these specifications. Every analytical decision should trace back to something documented here. Delete these comments and replace them with your study-specific details.
 
-**EXAMPLES PLEASE MODIFY**
+# Background {#sec-background}
 
-- How many people can we identify with cohort 1?
-- How do we characterize patients in cohort 1 at baseline (-365 days to -1 day before the index date)?
+## Rationale {#sec-rationale}
 
-## Data Sources {{#sec-data}}
+**MODIFY THIS SECTION**
 
+Clearly state why this study matters. What problem does it address? What gap in knowledge will this analysis fill?
 
-# Cohort Definitions {{#sec-cohorts}}
+Example: "This study characterizes treatment patterns in patients with Type 2 Diabetes to understand the use of guideline-recommended medications and identify opportunities for improved care."
 
+Your rationale here: [WRITE HERE]
+
+## Research Questions {#sec-questions}
+
+**MODIFY THIS SECTION**
+
+State specific, answerable research questions. Frame them in terms of what you're counting or measuring.
+
+Examples:
+- "How many patients can we identify with the primary condition of interest?"
+- "What is the prevalence of the condition in the study population?"
+- "What are the demographic and clinical characteristics of patients at baseline?"
+- "What treatment patterns emerge in the study population?"
+
+Your research questions:
+[WRITE HERE]
+
+## Data Sources {#sec-data}
+
+**MODIFY THIS SECTION**
+
+Document the database(s) you're using and justify the choice.
+
+Example template:
+
+**Database Name**
+
+- **Time coverage:** [Start date] to [End date]
+- **Population size:** [Number of patients/lives]
+- **Geography:** [Geographic scope]
+- **Data type:** [Claims, EHR, Claims+EHR, etc.]
+- **Why chosen:** [Justification - size, coverage, appropriateness for research questions]
+- **Known limitations:** [What this database doesn't capture well]
+
+Your data sources:
+[WRITE HERE]
+
+# Cohort Definitions {#sec-cohorts}
+
+**MODIFY THIS SECTION - STRUCTURE DEPENDS ON YOUR STUDY DESIGN**
+
+Define how patients enter your study. Be specific about inclusion/exclusion criteria and time windows.
+
+Example for a surveillance/prevalence study:
+
+**Population:** [Name of patient group]
+
+- **Entry criteria:** [When does a patient enter? e.g., "First diagnosis date", "First prescription date"]
+- **Inclusion criteria:** [Who stays in? e.g., "365 days continuous enrollment before and after entry"]
+- **Exclusion criteria:** [Who is excluded? e.g., "Prior exposure to comparison drug"]
+- **Observation window:** [How long are patients followed? e.g., "Until end of data or death"]
+
+Your cohort definitions:
+[WRITE HERE]
 
 # Analysis {{#sec-analysis}}
 
+**MODIFY THIS SECTION - STRUCTURE DEPENDS ON YOUR STUDY DESIGN**
 
+Specify exactly what you will measure and how.
+
+## Analysis 1: [Name Your Analysis]
+
+**What is being measured?**
+[e.g., "Prevalence of the condition in calendar year 2023"]
+
+**Time windows:**
+- Period of interest: [e.g., "Calendar year 2023"]
+- Lookback period: [e.g., "365 days before the period"]
+- Baseline window: [e.g., "365 days prior to index through 1 day before index"]
+- Follow-up window: [e.g., "From index date until end of observation or death"]
+
+**Population specifications:**
+- Numerator (What are you counting?): [Be specific. e.g., "Patients with the condition during the period"]
+- Denominator (At-risk population): [Be specific. e.g., "All patients with any enrollment during the period"]
+
+**Calculation:**
+[Write the formula. e.g., "(Numerator / Denominator) × 100,000 = [Outcome metric]"]
+
+**Stratification (if any):**
+[e.g., "By age group, sex, calendar year"]
+
+## Analysis 2: [Name Your Second Analysis]
+
+[Repeat structure above]
+
+[ADD MORE ANALYSES AS NEEDED]
+
+# Appendix
+
+## Links to Implementation (Optional)
+
+Once you complete this EGP, each major section should have a corresponding Picard task:
+
+- Cohort Definitions → `inputs/cohorts/`
+- Analysis 1 → `analysis/tasks/01_analysis1.R` (adjust numbering)
+- Analysis 2 → `analysis/tasks/02_analysis2.R` (adjust numbering)
+
+Document these mappings as you develop code to ensure consistency between your EGP and implementation.
 

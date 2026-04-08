@@ -7,6 +7,8 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+> **Note:** This vignette is currently in development and subject to change.
+
 ## Introduction
 
 Once your repository is initialized (see [Launching a Picard Study](launching_a_study.html)), the next phase is to develop your analysis pipeline. This vignette walks you through the complete development workflow on the `develop` branch, from defining inputs through testing your code.
@@ -30,10 +32,10 @@ The typical workflow is:
 **renv:** This is your responsibility. It's **highly encouraged** to set this up immediately:
 
 ```{r eval = FALSE}
-renv::init(project = "~/studies/diabetes_study")
+renv::init() # done in the project root directory
 ```
 
-This captures your current R environment, ensuring reproducibility for your team.
+This captures your current R environment, ensuring reproducibility for your team. You should set up renv on main before switching to develop, so that your development branch inherits the same environment. After running `renv::init()`, commit the changes to Git:
 
 ## Step 2: Create Your Development Branch
 
@@ -80,7 +82,7 @@ Use `makeTaskFile()` to scaffold a new task:
 
 ```{r eval = FALSE}
 makeTaskFile(
-  nameOfTask = "01_DescriptiveStats",
+  nameOfTask = "DescriptiveStats",
   author = "Jane Doe",
   description = "Generate descriptive statistics for primary cohort",
   projectPath = here::here(),
@@ -88,9 +90,15 @@ makeTaskFile(
 )
 ```
 
-This creates a standardized R script in `analysis/tasks/01_DescriptiveStats.R` with a template structure.
+This creates a standardized R script in `analysis/tasks/` with a template structure. The filename is automatically generated as `01_descriptive_stats.R`.
 
-**Task Naming Convention:** Use `NN_taskName.R` format where NN is a two-digit number (01, 02, 03). Tasks execute in alphabetical order, so the numbering controls execution sequence.
+**Task Naming Convention:** `makeTaskFile()` automatically handles the numbering based on existing files in your `analysis/tasks/` folder. You simply provide the task name (e.g., `"DescriptiveStats"`), and `makeTaskFile()` will:
+- Count existing task files
+- Generate the next sequential number (01, 02, 03, etc.)
+- Convert your task name to snake_case
+- Create the file as `NN_task_name.R`
+
+Tasks execute in alphabetical order, so the automatic numbering controls the execution sequence.
 
 ### Creating Supporting Source Files
 
@@ -105,6 +113,8 @@ makeSrcFile(
 ```
 
 This creates a standardized R script in `analysis/src/custom_analysis_functions.R` with a template structure for your utility functions.
+
+**File Naming Convention:** Use `snake_case` for the `fileName` parameter. The function will convert your input to snake_case automatically, so `"customAnalysisFunctions"`, `"CustomAnalysisFunctions"`, or `"custom_analysis_functions"` will all become `custom_analysis_functions.R`.
 
 **Important:** Treat source files like R package development:
 
@@ -137,9 +147,16 @@ This creates a standardized R script in `analysis/src/custom_analysis_functions.
   }
   ```
 
-Then source these files from your tasks:
+Then source these files from your tasks in the **B. Dependencies** section at the top of the task file:
 
 ```{r eval = FALSE}
+# B. Dependencies ---------------
+
+library(picard)
+library(DatabaseConnector)
+library(tidyverse)
+
+# Source utility functions
 source(here::here("analysis/src/custom_analysis_functions.R"))
 ```
 
@@ -149,44 +166,168 @@ For parameterized SQL queries used with SqlRender, create files in `analysis/src
 
 ```{r eval = FALSE}
 makeSrcSqlFile(
-  fileName = "condition_occurrence_summary",
+  fileName = "drug_exposure_summary",
   author = "Jane Doe",
-  description = "Count conditions by month in the CDM"
+  description = "Create a summary table of drug exposure by observation period"
 )
 ```
 
-This creates a standardized SQL file in `analysis/src/sql/condition_occurrence_summary.sql` with placeholders for SqlRender parameters.
+This creates a standardized SQL file in `analysis/src/sql/drug_exposure_summary.sql` with placeholders for SqlRender parameters.
 
-**Important:** SqlRender uses `@paramName` notation for substitution:
+**Important:** SqlRender uses `@paramName` notation for substitution. Here's a realistic example that builds an intermediate work table with multi-step logic:
 
 ```sql
-/* Document your parameters at the top of the file
-   @cdmDatabaseSchema - Schema containing OMOP CDM tables
-   @workDatabaseSchema - Schema for output tables
+/* 
+Document your parameters at the top:
+  @cdmDatabaseSchema - Schema containing OMOP CDM tables
+  @workDatabaseSchema - Schema for output tables
+  @workTableName - Name of the intermediate work table to create
+  @studyStartDate - Start date for filtering
+  @studyEndDate - End date for filtering
 */
 
-SELECT *
-FROM @cdmDatabaseSchema.condition_occurrence
-WHERE month_of_year = 6
-LIMIT 100;
-```
+-- Create intermediate table of drug exposures by observation period
+CREATE TABLE @workDatabaseSchema.@workTableName AS
 
-Then render and execute from your R tasks:
+WITH obs_periods AS (
+  -- Get all observation periods for study participants
+  SELECT 
+    person_id,
+    observation_period_start_date,
+    observation_period_end_date
+  FROM @cdmDatabaseSchema.observation_period
+  WHERE observation_period_start_date >= '@studyStartDate'
+    AND observation_period_start_date <= '@studyEndDate'
+),
 
-```{r eval = FALSE}
-# Read the SQL file
-sql <- readr::read_file(here::here("analysis/src/sql/condition_occurrence_summary.sql"))
+drug_exp AS (
+  -- Get drug exposures during these observation periods
+  SELECT
+    d.person_id,
+    op.observation_period_start_date,
+    op.observation_period_end_date,
+    d.drug_concept_id,
+    d.drug_exposure_start_date,
+    COALESCE(d.drug_exposure_end_date, d.drug_exposure_start_date) AS drug_exposure_end_date,
+    COALESCE(d.days_supply, 1) AS days_supply
+  FROM @cdmDatabaseSchema.drug_exposure d
+  JOIN obs_periods op
+    ON d.person_id = op.person_id
+    AND d.drug_exposure_start_date >= op.observation_period_start_date
+    AND d.drug_exposure_start_date <= op.observation_period_end_date
+),
 
-# Render parameters using SqlRender
-rendered_sql <- SqlRender::render(
-  sql,
-  cdmDatabaseSchema = "omop_cdm",
-  workDatabaseSchema = "work_schema"
+person_summary AS (
+  -- Aggregate to person-level summaries
+  SELECT
+    person_id,
+    observation_period_start_date,
+    observation_period_end_date,
+    COUNT(DISTINCT drug_concept_id) AS num_unique_drugs,
+    COUNT(DISTINCT drug_exposure_start_date) AS num_drug_exposures,
+    SUM(days_supply) AS total_days_supply,
+    AVG(days_supply) AS avg_days_supply,
+    MIN(drug_exposure_start_date) AS first_drug_date,
+    MAX(drug_exposure_end_date) AS last_drug_date
+  FROM drug_exp
+  GROUP BY person_id, observation_period_start_date, observation_period_end_date
 )
 
-# Execute the rendered query
-result <- DatabaseConnector::executeSql(connection, rendered_sql)
+SELECT * FROM person_summary;
 ```
+
+**Best Practice:** Wrap your SQL queries in utility functions stored in `analysis/src/` files, then call those functions from your tasks. This keeps SQL execution logic organized and reusable:
+
+```{r eval = FALSE}
+# Example utility function in analysis/src/execute_sql_queries.R
+
+get_drug_exposure_summary <- function(executionSettings,
+                                      workTableName = "drug_exposure_summary",
+                                      studyStartDate = "2020-01-01",
+                                      studyEndDate = "2023-12-31") {
+  # Read the SQL file
+  sql <- readr::read_file(here::here("analysis/src/sql/drug_exposure_summary.sql"))
+  
+  # Step 1: Render parameters using SqlRender
+  rendered_drug_sql <- SqlRender::render(
+    sql,
+    cdmDatabaseSchema = executionSettings$cdmDatabaseSchema,
+    workDatabaseSchema = executionSettings$workDatabaseSchema,
+    workTableName = workTableName,
+    studyStartDate = studyStartDate,
+    studyEndDate = studyEndDate
+  )
+  
+  # Step 2: Translate to DBMS dialect
+  # The ExecutionSettings object knows your DBMS type and tempEmulationSchema
+  translated_drug_sql <- SqlRender::translate(
+    rendered_drug_sql,
+    targetDialect = executionSettings$getDbms(),
+    tempEmulationSchema = executionSettings$tempEmulationSchema
+  )
+  
+  # Get the connection from ExecutionSettings
+  connection <- executionSettings$getConnection()
+  
+  # If connection is null, establish one
+  if (is.null(connection)) {
+    executionSettings$connect()
+    connection <- executionSettings$getConnection()
+  }
+  
+  # Step 3: Execute the query to create the work table
+  DatabaseConnector::executeSql(connection, translated_drug_sql)
+  
+  # Step 4: Query the created table to retrieve results
+  # Use SqlRender and translate for the SELECT query as well
+  select_query <- "SELECT * FROM @workDatabaseSchema.@workTableName"
+  
+  rendered_select <- SqlRender::render(
+    select_query,
+    workDatabaseSchema = executionSettings$workDatabaseSchema,
+    workTableName = workTableName
+  )
+  
+  translated_select <- SqlRender::translate(
+    rendered_select,
+    targetDialect = executionSettings$getDbms(),
+    tempEmulationSchema = executionSettings$tempEmulationSchema
+  )
+  
+  results <- DatabaseConnector::querySql(connection, translated_select)
+  
+  # Disconnect from the database
+  executionSettings$disconnect()
+  
+  cli::cli_alert_success("Drug exposure summary retrieved successfully")
+  
+  return(results)
+}
+```
+
+Then call this function from your task file:
+
+```{r eval = FALSE}
+# In your task file (e.g., 02_drug_exposure_analysis.R)
+source(here::here("analysis/src/execute_sql_queries.R"))
+
+# Execute the SQL query and collect results
+drug_summary <- get_drug_exposure_summary(
+  executionSettings = executionSettings,
+  workTableName = "drug_exp_summary",
+  studyStartDate = "2020-01-01",
+  studyEndDate = "2023-12-31"
+)
+
+# Now work with results in R
+head(drug_summary)
+```
+
+**Workflow Summary:**
+1. SQL file creates the intermediate work table with computed values
+2. R function orchestrates render → translate → execute → collect
+3. Task file sources the utility function and gets back a dataframe
+4. All database configuration comes from `ExecutionSettings`
 
 ## Step 5: Commit Changes with `saveWork()`
 
@@ -248,41 +389,43 @@ Picard provides two testing modalities on the `develop` branch:
 
 ### Test Single Task with `testStudyTask()`
 
-Test the current task file in isolation:
+Test a specific task file in isolation:
 
 ```{r eval = FALSE}
-# Open your task file (e.g., 01_DescriptiveStats.R) and run:
-testStudyTask()
+testStudyTask(
+  taskFile = "01_descriptive_stats.R",
+  configBlock = "omop_cdm"
+)
 ```
 
-This executes only the current file, allowing rapid iteration on specific tasks without running the entire pipeline.
+**Parameters:**
+- `taskFile`: The base name of your task file (just the filename, no path)
+- `configBlock`: The name of your config block (e.g., the database config you want to use)
+
+This executes only the specified task, allowing rapid iteration on specific tasks without running the entire pipeline. The function automatically uses "dev" version for testing and prevents running on the `main` branch.
 
 ### Test Full Pipeline with `testStudyPipeline()`
 
 Once individual tasks work, test the complete pipeline:
 
 ```{r eval = FALSE}
-testStudyPipeline()
+testStudyPipeline(configBlock = "omop_cdm")
 ```
+
+**Parameters:**
+- `configBlock`: The name of your config block (can be a single value or vector of multiple configs)
 
 This runs all tasks in sequence (in alphabetical order) with the same configuration as production, helping you catch integration issues.
 
 **Testing Workflow:**
 1. Edit a task file
-2. Run `testStudyTask()` to verify the individual task works
-3. Once satisfied, run `testStudyPipeline()` to verify the full workflow
-4. Commit your changes to `develop`
+2. Run `testStudyTask(taskFile = "01_your_task.R", configBlock = "omop_cdm")` to verify changes to that specific task
+3. Once satisfied, run `testStudyPipeline(configBlock = "omop_cdm")` to verify the full workflow
+4. Commit your changes with `saveWork()`
 
 ### Commit and Push to Develop
 
-After testing successfully:
-
-```bash
-git add analysis/tasks/01_DescriptiveStats.R
-git add analysis/src/custom_analysis_functions.R
-git commit -m "Add descriptive stats task and utility functions"
-git push origin develop
-```
+After testing successfully, commit your changes using either `saveWork()` or Git commands directly (see [Commit Changes with `saveWork()`](#step-5-commit-changes-with-savework) earlier in this vignette for details).
 
 ## Next Steps: Production Execution
 
@@ -298,7 +441,7 @@ Once your analysis is tested and validated on `develop`, see [Running the Pipeli
 | **Development** | `makeSrcFile()` | (optional) Create utility/helper function file |
 | **Development** | `makeSrcSqlFile()` | (optional) Create parameterized SQL query file |
 | **Development** | `saveWork()` | Commit and push code changes to remote |
-| **Testing** | `testStudyTask()` | Test current task file only |
+| **Testing** | `testStudyTask()` | Test single task file |
 | **Testing** | `testStudyPipeline()` | Test full pipeline end-to-end |
 | **Production** | See Running the Pipeline | Execute on release branch |
 

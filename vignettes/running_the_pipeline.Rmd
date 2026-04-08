@@ -1,155 +1,46 @@
 ---
-title: "Running the Pipeline: Test vs. Production Execution"
+title: "Running the Pipeline: Production Execution"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Running the Pipeline: Test vs. Production Execution}
+  %\VignetteIndexEntry{Running the Pipeline: Production Execution}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
+> **Note:** This vignette is currently in development and subject to change.
+
 ## Introduction
 
-Picard distinguishes between two execution modes: **test mode** for rapid iteration during development, and **production mode** for formal analysis runs. This separation ensures code quality while enabling rapid experimentation.
+This vignette covers **production mode execution** in Picard—running your pipeline for official analysis results.
 
-- **Test Mode:** Fast, forgiving iteration during development
-- **Production Mode:** Rigorous validation, versioning, and audit trails for official results
+Development and testing workflows are covered in [Developing the Pipeline](developing_the_pipeline.html). Production mode adds rigorous validation, semantic versioning, and audit trails to ensure results are reproducible and suitable for publications or regulatory submissions.
 
-This vignette explains when to use each mode, how they differ, and how to run both.
+## The Production Pipeline
 
-## The Two Pipelines
-
-When you launch a Picard study, two execution scripts are created:
-
-### main.R — Production Pipeline
-
-Located in the project root, `main.R` is the official execution script. It:
+The official execution script is `main.R` in your project root. It:
 
 - Validates your code state (git clean, all changes committed)
 - Increments your study version (semantic versioning)
 - Runs the complete pipeline with all validations
 - Creates a release branch for reproducibility
 - Generates PR metadata for code review
-- Saves production-quality results
+- Saves production-quality results in a versioned folder
 
 ```{r eval = FALSE}
 # Run production pipeline
 source("main.R")
 ```
 
-### extras/test_main.R — Development Pipeline
+## When to Run Production
 
-Located in `extras/`, `test_main.R` is the development variant. It:
-
-- Skips git and code validation
-- Uses a "dev" version folder (not production-versioned)
-- Allows rapid iteration without version management overhead
-- Provides immediate visual feedback
-- Ideal for exploratory analysis and task debugging
-
-```{r eval = FALSE}
-# Run development pipeline
-source("extras/test_main.R")
-```
-
-## When to Use Test Mode
-
-Use test mode (`extras/test_main.R`) for:
-
-- **Developing new analysis tasks:** Write, test, iterate on individual tasks
-- **Exploring data:** Quick diagnostic runs to understand your database
-- **Debugging issues:** Rapid feedback on analysis errors
-- **Team collaboration on features:** Before committing to production
-- **Any work that's not a formal analysis run**
-
-Test mode places results in `exec/results/[database]/dev/` so they don't interfere with versioned results.
-
-Example workflow:
-
-```{r eval = FALSE}
-# 1. Create a new task file in analysis/tasks/04_newAnalysis.R
-# 2. Open extras/test_main.R and modify config as needed
-source("extras/test_main.R")
-
-# 3. Check output in exec/results/[database]/dev/
-# 4. Results are there—iterate and refine
-# 5. Once satisfied, commit code and prepare for production run
-```
-
-## When to Use Production Mode
-
-Use production mode (`main.R`) for:
+Run `main.R` for:
 
 - **Formal analysis runs:** Official results for publications or regulatory submissions
 - **Final results:** When you're confident in the code and ready for version history
-- **Studyathon submissions:** Required for most OHDSI initiatives
 - **Multi-database comparisons:** Ensures consistency across databases
-- **Code review:** Results from `main.R` go through PR review before being accepted
+- **Code review:** Results go through PR review before acceptance
 
 Production mode places versioned results in `exec/results/[database]/[version]/` (e.g., `1.0.0/`).
-
-## Differences Between Test and Production
-
-| Aspect | Test Mode | Production Mode |
-|--------|-----------|-----------------|
-| **Script** | extras/test_main.R | main.R |
-| **Version** | Always "dev" | Semantic version (1.0.0, etc.) |
-| **Git validation** | Skipped | Required (branch, clean state) |
-| **Code validation** | Skipped | Full validation |
-| **renv snapshot** | Skipped | Captured for reproducibility |
-| **Output folder** | `[db]/dev/` | `[db]/[version]/` |
-| **PR workflow** | N/A | Automatic PR metadata |
-| **Iteration speed** | Very fast | Slower (validation overhead) |
-| **Use case** | Development | Official results |
-
-## Running Test Mode
-
-### Basic Usage
-
-```{r eval = FALSE}
-# Navigate to your study repository
-setwd("~/studies/myStudy")
-
-# Run test pipeline on develop branch
-source("extras/test_main.R")
-```
-
-This executes all tasks in `analysis/tasks/` with configuration from the first config block.
-
-### Test Individual Tasks
-
-Instead of running the full pipeline, test a single task during development:
-
-```{r eval = FALSE}
-library(picard)
-
-# Test just the descriptive statistics task
-testStudyTask(
-  taskFile = "02_descriptiveStats.R",
-  configBlock = "primaryDB"
-)
-```
-
-Results appear in `exec/results/primary_db/dev/02_descriptiveStats/`.
-
-### Customize Test Configuration
-
-The `extras/test_main.R` script is a template you can modify:
-
-```{r eval = FALSE}
-# In extras/test_main.R, you can customize:
-
-# Run only specific config blocks (instead of all)
-configBlocks <- "primaryDB"  # or c("primaryDB", "secondaryDB")
-
-# Run only specific tasks by editing the script
-# Or use testStudyTask() for individual tasks
-
-# Set custom output messages
-verbose <- TRUE
-
-# Then source the script
-source("extras/test_main.R")
-```
 
 ## Running Production Mode
 
@@ -161,6 +52,8 @@ Before running production mode:
 2. **Be on develop branch (or feature branch):** `git checkout develop`
 3. **Pull latest changes:** `git pull`
 4. **Verify configuration:** Check config.yml for correctness
+
+You can also do this by using the `saveWork()` function which we describe in [Developing the Pipeline](developing_the_pipeline.html) to save your work and prepare for production.
 
 ### Basic Usage
 
@@ -198,63 +91,19 @@ Choose the appropriate semantic version increment:
 
 ## Understanding the Pipeline Workflow
 
-Both pipelines follow the same general workflow:
+Production execution follows four main phases:
 
-### Phase 1: Setup
+1. **Setup:** Validate configuration, load execution settings, create output directories
 
-```r
-Validate configuration
-Load execution settings
-Create output directories
-```
+2. **Generate Cohorts:** Load cohort and concept set manifests, validate all definitions exist, generate cohorts in database, retrieve cohort counts
 
-### Phase 2: Generate Cohorts
+3. **Run Analysis Tasks:** For each task in `analysis/tasks/`, load configuration, execute task code, check for errors, record results
 
-```r
-Load cohort and concept set manifests
-Validate all definitions exist
-Generate cohorts in database
-Retrieve cohort counts
-```
-
-### Phase 3: Run Analysis Tasks
-
-For each task in `analysis/tasks/`:
-```r
-Load configuration
-Execute task code
-Check for errors
-Record results
-```
-
-### Phase 4: Post-Processing (Production Only)
-
-```r
-Generate version logs
-Create PR metadata
-Save PENDING_PR.md
-```
+4. **Post-Processing:** Generate version logs, create PR metadata, save PENDING_PR.md
 
 ## Handling Errors and Failures
 
-### Test Mode Errors
-
-If a task fails in test mode, the pipeline stops and displays the error:
-
-```
-Error in task 02_descriptiveStats.R:
-object 'cohortData' not found
-```
-
-Fix the error in your task file and re-run:
-
-```{r eval = FALSE}
-source("extras/test_main.R")
-```
-
-### Production Mode Errors
-
-Production mode validates more strictly. Common issues:
+Production mode validates code state strictly. Common issues:
 
 **"Cannot run production pipeline on main branch!"**
 - Solution: Switch to develop: `git checkout develop`
@@ -267,21 +116,7 @@ Production mode validates more strictly. Common issues:
 
 ## Reviewing Results
 
-### Test Mode Results
-
-After test mode, review results in:
-
-```
-exec/results/[database]/dev/
-├── 00_buildCohorts/          # Cohort counts
-├── 01_firstAnalysisTask/     # Task 1 outputs
-├── 02_secondAnalysisTask/    # Task 2 outputs
-└── picard_log_dev_*.txt      # Execution log
-```
-
-### Production Mode Results
-
-After production mode, results are in versioned folders:
+After production mode, results are organized in versioned folders:
 
 ```
 exec/results/[database]/1.1.0/       # Version 1.1.0
@@ -313,7 +148,7 @@ Production mode enables structured code review:
 
 ### Git Branches
 
-Test mode works on any branch. Production mode:
+Production mode:
 
 1. Creates a release branch: `release/[version]`
 2. Runs pipeline on that branch
@@ -342,10 +177,9 @@ git push origin v1.1.0
 
 ### Log Files
 
-Picard creates detailed execution logs:
+Picard creates detailed execution logs in `exec/logs/`:
 
-- **test_main.R run:** `exec/logs/picard_log_dev_*.txt`
-- **main.R run:** `exec/logs/picard_log_1.1.0_*.txt`
+- **Production run:** `picard_log_1.1.0_*.txt`
 
 Review logs to understand which tasks ran, their duration, and any warnings:
 
@@ -387,7 +221,7 @@ Manually create output folder:
 
 ```{r eval = FALSE}
 # Ensure output structure exists
-exec_path <- fs::path(here::here(), "exec/results/primary_db/dev")
+exec_path <- fs::path(here::here(), "exec/results/primary_db/1.0.0")
 fs::dir_create(exec_path, recurse = TRUE)
 ```
 
@@ -402,14 +236,16 @@ list.dirs("exec/results/primary_db", recursive = FALSE)
 
 ## Next Steps
 
-1. **Start with test mode:** Develop and refine your tasks using `extras/test_main.R`
-2. **Verify code quality:** Ensure tasks run successfully multiple times
-3. **Switch to production:** When ready for official results, use `main.R`
-4. **Archive results:** Use `zipAndArchive()` to preserve important results
+1. **Develop and test:** Use [Developing the Pipeline](developing_the_pipeline.html) workflows
+2. **Verify code quality:** Ensure all tasks run successfully and produce expected results
+3. **Run production:** When ready for official results, use `main.R`
+4. **Review and merge:** Follow code review workflow before accepting to main branch
+5. **Archive results:** Use `zipAndArchive()` to preserve important results
 
 ## See Also
 
-- [The Ulysses Standard Repository Structure](picard_repository_structure.html) - Where results are organized
+- [Developing the Pipeline](developing_the_pipeline.html) - Testing and iteration during development
+- [The Picard Repository Structure](picard_repository_structure.html) - Where results are organized
 - [Launching a Study](launching_a_study.html) - Initial setup
 - [Loading Inputs](loading_inputs.html) - Cohort and concept set setup
 - [Post-Processing Steps](post_processing.html) - Working with results after execution

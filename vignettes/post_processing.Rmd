@@ -7,543 +7,213 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+> **Note:** This vignette is currently in development and subject to change.
+
 ## Introduction
 
-After your pipeline runs successfully via `testStudyPipeline()` or `execStudyPipeline()`, raw analytical outputs are saved in `exec/results/[database]/[version]/`. Post-processing transforms these raw files into polished results ready for dissemination, visualization, and publication.
+After your pipeline runs successfully via `execStudyPipeline()`, raw analytical outputs are saved in `exec/results/[database]/[version]/` organized by task. Post-processing orchestrates the merge and quality control of these results across multiple databases and exports them to `dissemination/export/merge/v{version}/`.
 
-Picard post-processing includes:
+The main post-processing step is **orchestrating the pipeline export**, which:
 
-- **Data formatting:** Convert CSV outputs to analysis-ready formats (xlsx, parquet)
-- **Result aggregation:** Combine results across databases for comparison
-- **Visualization:** Generate plots and tables for reports
-- **Quality assurance:** Check for anomalies and data issues
-- **Documentation:** Create vignettes and reports explaining methods and results
-- **Archival:** Store important results with metadata for long-term access
+1. Merges result files across all databases for each task
+2. Generates reference files (cohortKey, databaseInfo)
+3. Reviews the schema of all exported files
+4. Validates cohort result completeness
+5. Generates execution metadata and QC reports
 
-This vignette walks through the post-processing workflow.
+## The Post-Processing Workflow
 
-## Understanding Post-Processing in Picard
+### Step 1: Orchestrate the Pipeline Export
 
-### Raw vs. Processed Results
-
-**Raw Results** (in `exec/results/[db]/[version]/`):
-- CSVs and data files output directly by analysis tasks
-- Intermediate calculations (diagnostics, intermediate statistics)
-- Unformatted, potentially large, analysis-ready format
-
-**Processed Results** (in `dissemination/`):
-- Finalized tables ready for publication
-- Formatted xlsx files with styling
-- Visualizations and graphics
-- Summary reports combining multiple analyses
-
-### Workflow Phases
-
-**Phase 1: Immediate Post-Processing**
-After production pipeline completes, move and consolidate results:
-
-```
-exec/results/[db]/[version]/ → dissemination/results/[analysis]/
-```
-
-**Phase 2: Quality Assurance**
-Review raw results for errors, anomalies, missing data
-
-**Phase 3: Formatting & Aggregation**
-Convert to publication-ready formats, combine across databases
-
-**Phase 4: Visualization**
-Create figures, tables, and interactive elements
-
-**Phase 5: Documentation**
-Write vignettes and technical reports
-
-## Phase 1: Moving and Consolidating Results
-
-### Organize Results by Analysis Type
-
-Create subdirectories in `dissemination/results/` that mirror your analytical structure:
-
-```
-dissemination/results/
-├── 01_descriptive/
-│   ├── demographics.csv
-│   ├── flowchart.csv
-│   └── sequenceOfEvents.csv
-├── 02_primary/
-│   ├── mainComparisonResults.csv
-│   ├── estimatedEffects.csv
-│   └── confidenceIntervals.csv
-├── 03_sensitivity/
-│   ├── ageSubgroup.csv
-│   ├── sexSubgroup.csv
-│   └── robustnessTest.csv
-└── 04_diagnostics/
-    ├── cohortDiagnostics.csv
-    └── propensityScoreAnalysis.csv
-```
-
-### Consolidate Multi-Database Results
-
-If you ran on multiple databases, create a consolidated summary:
+After your production pipeline completes, call `orchestratePipelineExport()` to merge and validate all results:
 
 ```{r eval = FALSE}
 library(picard)
-library(dplyr)
-library(readr)
 
-# Read results from each database
-primary_results <- read_csv("exec/results/primary_db/1.0.0/02_primary/mainResults.csv")
-secondary_results <- read_csv("exec/results/secondary_db/1.0.0/02_primary/mainResults.csv")
-
-# Add database identifier
-primary_results <- primary_results %>% mutate(database = "Primary DB")
-secondary_results <- secondary_results %>% mutate(database = "Secondary DB")
-
-# Combine
-combined_results <- bind_rows(primary_results, secondary_results)
-
-# Save consolidated
-write_csv(combined_results, "dissemination/results/02_primary/combined_mainResults.csv")
-```
-
-## Phase 2: Quality Assurance
-
-### Check for Missing Values
-
-```{r eval = FALSE}
-# Load results
-results <- read_csv("dissemination/results/02_primary/mainResults.csv")
-
-# Check for missing values
-missing_summary <- results %>%
-  summarise(across(everything(), ~sum(is.na(.))))
-
-print(missing_summary)
-
-# Flag if unexpected missingness
-if (any(missing_summary > 0)) {
-  warning("Found missing values in results. Investigate before publication.")
-}
-```
-
-### Validate Numeric Ranges
-
-```{r eval = FALSE}
-# Check for impossible values (e.g., proportions > 1, negative cell counts)
-results <- results %>%
-  mutate(
-    proportion_valid = proportion >= 0 & proportion <= 1,
-    count_valid = count >= 0,
-    ci_valid = ci_lower <= estimate & estimate <= ci_upper
-  )
-
-# Report any issues
-if (!all(results$proportion_valid)) {
-  warning("Found invalid proportions outside [0,1]")
-}
-```
-
-### Review Numeric Precision
-
-```{r eval = FALSE}
-# Check if numbers have appropriate precision
-results %>%
-  select(where(is.numeric)) %>%
-  summarize(across(everything(), list(
-    min = ~min(.),
-    max = ~max(.),
-    mean = ~mean(.),
-    na_count = ~sum(is.na(.))
-  )))
-```
-
-### Consistency Checks
-
-```{r eval = FALSE}
-# Ensure row counts match across related results
-descriptive_count <- nrow(read_csv("dissemination/results/01_descriptive/demographics.csv"))
-primary_count <- nrow(read_csv("dissemination/results/02_primary/mainResults.csv"))
-
-if (descriptive_count != primary_count) {
-  warning(glue::glue(
-    "Row count mismatch: descriptive ({descriptive_count}) vs primary ({primary_count})"
-  ))
-}
-```
-
-## Phase 3: Formatting and Aggregation
-
-### Convert to Excel with Formatting
-
-```{r eval = FALSE}
-library(openxlsx)
-
-# Read results
-results <- read_csv("dissemination/results/02_primary/mainResults.csv")
-
-# Create Excel workbook
-wb <- createWorkbook()
-addWorksheet(wb, "Results")
-
-# Write data
-writeData(wb, "Results", results)
-
-# Format header row
-headerStyle <- createStyle(
-  fgFill = "#4472C4",
-  fontColour = "white",
-  textDecoration = "bold"
+# Orchestrate export for version 1.0.0 across two databases
+orchestratePipelineExport(
+  pipelineVersion = "1.0.0",
+  dbIds = c("omop_cdm", "another_cdm"),
+  resultsPath = here::here("exec/results"),
+  exportPath = here::here("dissemination/export/merge"),
+  cohortsFolderPath = here::here("inputs/cohorts")
 )
-addStyle(wb, "Results", headerStyle, rows = 1, cols = 1:ncol(results))
-
-# Adjust column widths
-setColWidths(wb, "Results", cols = 1:ncol(results), widths = "auto")
-
-# Save
-saveWorkbook(wb, "dissemination/export/pretty/mainResults.xlsx", overwrite = TRUE)
 ```
 
-### Summarize Results Across Databases
+This function:
 
-```{r eval = FALSE}
-library(dplyr)
+- **Discovers all tasks** for the specified version
+- **Calls `importAndBind()`** for each task to merge results across databases
+- **Creates reference files**: cohortKey.csv, databaseInfo.csv
+- **Reviews file schemas** with `reviewExportSchema()`
+- **Validates cohorts** with `validateCohortResults()`
+- **Generates QC reports**: qc_cohortValidation.csv, qc_processMeta.csv
 
-# Read results from all databases
-databases <- c("primary_db", "secondary_db", "tertiary_db")
+### Output Folder Structure
 
-all_results <- map_df(databases, ~{
-  db_name <- .x
-  read_csv(glue::glue("exec/results/{db_name}/1.0.0/02_primary/mainResults.csv")) %>%
-    mutate(database = db_name)
-})
-
-# Calculate summary statistics
-summary <- all_results %>%
-  group_by(analysis) %>%
-  summarize(
-    n_databases = n_distinct(database),
-    estimate_mean = mean(estimate),
-    estimate_sd = sd(estimate),
-    .groups = "drop"
-  )
-
-write_csv(summary, "dissemination/results/02_primary/summary_acrossDatabases.csv")
-```
-
-### Create Result Comparison Tables
-
-```{r eval = FALSE}
-library(dplyr)
-library(tidyr)
-
-# Read multi-database results
-combined <- read_csv("dissemination/results/02_primary/combined_mainResults.csv")
-
-# Create wide format for comparison
-comparison <- combined %>%
-  select(analysis, estimate, ci_lower, ci_upper, database) %>%
-  pivot_wider(
-    names_from = database,
-    values_from = c(estimate, ci_lower, ci_upper)
-  )
-
-write_csv(comparison, "dissemination/results/02_primary/comparison_acrossDB.csv")
-```
-
-## Phase 4: Visualization
-
-### Generate Descriptive Plots
-
-```{r eval = FALSE}
-library(ggplot2)
-
-# Load data
-demographics <- read_csv("dissemination/results/01_descriptive/demographics.csv")
-
-# Plot age distribution
-p <- ggplot(demographics, aes(x = age_group, y = percentage)) +
-  geom_col(fill = "#4472C4") +
-  labs(
-    title = "Age Distribution of Study Population",
-    x = "Age Group",
-    y = "Percentage (%)"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-ggsave("dissemination/results/01_descriptive/ageDistribution.png", p, width = 8, height = 5)
-```
-
-### Create Forest Plots for Effect Estimates
-
-```{r eval = FALSE}
-library(ggplot2)
-
-# Load results
-results <- read_csv("dissemination/results/02_primary/mainResults.csv")
-
-# Create forest plot
-p <- ggplot(results, aes(y = contrast, x = estimate)) +
-  geom_point(size = 3) +
-  geom_errorbarh(aes(xmin = ci_lower, xmax = ci_upper), height = 0.2) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "red", alpha = 0.5) +
-  labs(
-    title = "Primary Analysis Results",
-    x = "Hazard Ratio (95% CI)",
-    y = "Comparison"
-  ) +
-  scale_x_log10() +
-  theme_minimal()
-
-ggsave("dissemination/results/02_primary/forestPlot.png", p, width = 8, height = 6)
-```
-
-### Flowchart Documentation
-
-```{r eval = FALSE}
-# Flowchart data from cohort generation
-flowchart <- tribble(
-  ~step, ~n,
-  "Initial cohort", 1234567,
-  "Excluded: Age <18", 234567,
-  "Excluded: No prior dx", 123456,
-  "Primary population", 876000,
-  "Exposed group", 456000,
-  "Unexposed group", 420000
-)
-
-write_csv(flowchart, "dissemination/results/01_descriptive/flowchart.csv")
-```
-
-## Phase 5: Documentation
-
-### Create Quarto/R Markdown Reports
-
-```{r eval = FALSE}
-# Create dissemination/quarto/mainReport.qmd
-
-# Report template structure:
-# - Executive summary
-# - Methods (cohort definitions, analyses)
-# - Results (tables, figures)
-# - Interpretation
-# - Appendices (detailed methods, sensitivity analyses)
-```
-
-Create a Quarto file that renders results into a professional report:
-
-```bash
-# In dissemination/quarto/mainReport.qmd
-
----
-title: "Study Results Report"
-author: "Research Team"
-date: "`r Sys.Date()`"
-format: html
----
-
-## Executive Summary
-
-[Brief summary of key findings]
-
-## Methods
-
-### Study Population
-
-[Describe cohort definitions from manifests]
-
-### Analysis
-
-[Describe analytical approaches]
-
-## Results
-
-```{r}
-# Load and display results
-results <- read_csv("../results/02_primary/mainResults.csv")
-knitr::kable(results)
-```
-
-## Appendices
-
-[Sensitivity analyses, diagnostic results, etc.]
-```
-
-Render with:
-
-```{r eval = FALSE}
-quarto::quarto_render("dissemination/quarto/mainReport.qmd")
-```
-
-### Document Methods and Assumptions
-
-Create a methods document explaining your analyses:
+After orchestration completes, results are organized in:
 
 ```
-dissemination/documents/methods.md
-
-## Cohort Definitions
-
-- **Primary Population:** Type 2 Diabetes (see inputs/cohorts/cohortManifest.sqlite ID 1)
-- **Exposure:** Antidiabetic Medication (see inputs/conceptSets/conceptSetManifest.sqlite ID 1)
-- **Outcome:** Acute MI (see inputs/conceptSets/conceptSetManifest.sqlite ID 2)
-
-## Study Design
-
-[Comparative cohort design, XXX-XXXXX patient-years, ...]
-
-## Statistical Methods
-
-[Analysis approach, adjustment variables, sensitivity tests]
+dissemination/export/merge/v1.0.0/
+├── 00_buildCohorts.csv          # Cohort counts merged across databases
+├── 01_descriptiveStats.csv      # Task 1 results merged
+├── 02_primaryAnalysis.csv       # Task 2 results merged
+├── cohortKey.csv                # Reference: cohort IDs and labels
+├── databaseInfo.csv             # Reference: which databases included
+├── schema_review.csv            # Column-level schema of all files
+├── qc_cohortValidation.csv      # QC: completeness check
+└── qc_processMeta.csv           # QC: execution metadata
 ```
 
-## Phase 6: Archival
+## Reference Files
 
-### version 1Archive Results
+### cohortKey.csv
+
+Maps cohort IDs to labels for interpretation. Pulled from your cohort manifest if available:
+
+```
+cohortId,cohortLabel,cohortTags
+1,Type 2 Diabetes,phenotype
+2,CVD Comparator,phenotype
+3,MI Outcome,outcome
+```
+
+### databaseInfo.csv
+
+Documents which databases were included in the merge:
+
+```
+databaseId,databaseName,databaseLabel,cohortTable
+omop_cdm,database_1,OMOP CDM - Site A,cohort
+uk_biobank,database_2,UK Biobank Linked EHR,cohort_table
+```
+
+This helps identify which databases contributed to each result.
+
+### schema_review.csv
+
+Inspects the structure of all exported CSV files. Useful for identifying:
+
+- Column naming inconsistencies
+- Unexpected data types
+- Columns that need transformation
+
+```
+fileName,columnName,dataType,rowCount
+cohortCounts.csv,databaseId,character,5
+cohortCounts.csv,cohortId,numeric,5
+cohortCounts.csv,cohortEntries,numeric,5
+descriptiveStats.csv,databaseId,character,120
+descriptiveStats.csv,cohortId,numeric,120
+descriptiveStats.csv,ageGroup,character,120
+```
+
+## Quality Assurance
+
+### qc_cohortValidation.csv
+
+Validates that all cohorts in your cohort key have corresponding results. Flags:
+
+- **OK:** Cohort found in results with non-zero counts
+- **ZeroCount:** Cohort found but has zero entries or subjects (non-enumerated)
+- **Missing:** Cohort in manifest but not found in results
+
+```
+cohortId,label,validationStatus,details
+1,Type 2 Diabetes,OK,entries: 245897, subjects: 123456
+2,CVD Comparator,OK,entries: 189234, subjects: 98765
+3,MI Outcome,ZeroCount,entries: 0, subjects: 0
+```
+
+Use this to identify:
+
+- Cohorts that need investigation (why zero?)
+- Cohorts that didn't enumerate (possible definition issues)
+
+### qc_processMeta.csv
+
+Records execution metadata for reproducibility:
+
+```
+executionTimestamp,pipelineVersion,codeCommitSha,lockfileHash,databasesIncluded,databaseCount,tasksProcessed,totalFilesExported,totalRowsMerged,qcStatus
+2024-03-15 14:32:00,1.0.0,abc1234def5678,hash123,OMOP CDM | UK Biobank,2,3,9,542870,OK
+```
+
+Tracks:
+
+- **When** the export ran
+- **What version** was exported
+- **Code state** (git commit SHA for reproducibility)
+- **Environment** (renv lockfile hash for dependency reproducibility)
+- **Scope** (which databases, how many tasks)
+- **Results** (files and rows merged)
+- **QC Status** (OK, HasWarnings, or other)
+
+## Advanced: Manual Import and Binding
+
+If you need to merge results for a specific task only, use `importAndBind()`:
 
 ```{r eval = FALSE}
 library(picard)
 
-# Archive main results
-zipAndArchive(input = "exportPretty")
-
-# Archive analysis
-zipAndArchive(input = "exportMerge")
+# Merge just the descriptive statistics task across all databases
+importAndBind(
+  version = "1.0.0",
+  taskName = "01_descriptiveStats",
+  dbIds = c("omop_cdm", "another_cdm"),
+  resultsPath = here::here("exec/results"),
+  exportPath = here::here("dissemination/export/merge")
+)
 ```
 
-This creates timestamped archives in `exec/archive/`:
+This combines all CSV files from that task across databases and adds a `databaseId` column to identify the source.
 
-```
-exec/archive/
-├── export_pretty_1.0.0_20260407_093045.zip
-├── export_merge_1.0.0_20260407_093045.zip
-└── quarto_site_1.0.0_20260407_093045.zip
-```
+## Advanced: Schema Review
 
-### Metadata for Archives
+To examine file structure without full orchestration:
 
-Create a README in `exec/archive/` documenting your archives:
+```{r eval = FALSE}
+library(picard)
 
-```
-# Archive Manifest
-
-## Version 1.0.0 (April 7, 2026)
-
-- Filename: export_pretty_1.0.0_20260407_093045.zip
-- Size: 245 MB
-- Content: Formatted xlsx results and analysis output
-- Databases: Primary DB, Secondary DB
-- Analysis tasks: 01-05 complete
-- Notes: Initial publication version
-```
-
-## Integration with Study Pipeline
-
-Post-processing is typically performed immediately after production pipeline completion:
-
-```
-1. Commit latest changes to develop branch
-2. Run: source("main.R")
-   [Pipeline runs and completes]
-3. Review PENDING_PR.md
-4. Run post-processing tasks
-5. Commit formatted results to dissemination/
-6. Create PR with both pipeline + processed results
-```
-
-## Best Practices
-
-### Reproducibility
-
-All post-processing scripts should be version-controlled:
-
-```
-analysis/src/
-├── postProcessing.R      # Main post-processing functions
-├── formatting.R          # Excel formatting helpers
-└── visualization.R       # Common graphing functions
-```
-
-Reference these from your post-processing workflows.
-
-### Documentation
-
-Document assumptions and cleaning steps:
-
-```r
-# Remove rows with missing exposure data
-results_clean <- results %>%
-  filter(!is.na(exposure_status))  # Removed N rows
-
-# Flag outliers for review
-results_clean <- results_clean %>%
-  mutate(
-    is_outlier = abs(scale(estimate)) > 3,
-    note = if_else(is_outlier, "Review before publication", NA_character_)
-  )
-```
-
-### Quality Gates
-
-Establish criteria before publishing:
-
-```r
-# Quality assurance checklist
-qa_checks <- list(
-  no_missing = all(!is.na(results$estimate)),
-  valid_ci = all(results$ci_lower <= results$estimate & 
-                 results$estimate <= results$ci_upper),
-  databases_match = n_distinct(results$database) == expected_databases,
-  row_counts_match = nrow(results) == expected_rows
+# Review schema of exported files
+schema <- reviewExportSchema(
+  exportPath = here::here("dissemination/export/merge/v1.0.0")
 )
 
-# Only proceed if all pass
-if (!all(unlist(qa_checks))) {
-  stop("Quality assurance checks failed. Review results before publication.")
-}
+# Check for specific data types
+character_cols <- schema[schema$dataType == "character", ]
 ```
 
-## Troubleshooting
+## Advanced: Cohort Validation
 
-### "Results folder not found"
-
-Check that pipeline completed successfully:
+To validate cohort results independently:
 
 ```{r eval = FALSE}
-# Verify results exist
-fs::dir_exists("exec/results/primary_db/1.0.0/02_primary/")
-```
+library(picard)
 
-### "Merging results gives mismatched rows"
+# Validate cohorts in exported results
+validation <- validateCohortResults(
+  exportPath = here::here("dissemination/export/merge/v1.0.0"),
+  resultsFileName = "cohortCounts.csv"
+)
 
-Ensure databases used consistent cohort definitions:
+# View validation results
+print(validation)
 
-```{r eval = FALSE}
-# Check cohort counts matched
-primary_counts <- read_csv("exec/results/primary_db/1.0.0/00_buildCohorts/cohortCounts.csv")
-secondary_counts <- read_csv("exec/results/secondary_db/1.0.0/00_buildCohorts/cohortCounts.csv")
-
-# Compare
-setdiff(primary_counts$id, secondary_counts$id)  # If empty, all IDs match
-```
-
-### "xlsx writing failed"
-
-Ensure openxlsx is installed:
-
-```{r eval = FALSE}
-install.packages("openxlsx")
+# Check for issues
+issues <- validation[validation$validationStatus != "OK", ]
 ```
 
 ## Next Steps
 
-1. **Immediate:** Run post-processing after each production pipeline execution
-2. **Ongoing:** Create reusable post-processing scripts in analysis/src/
-3. **Final:** Archive results and create final report for dissemination
+1. **Run orchestration:** Call `orchestratePipelineExport()` after production pipeline completes
+2. **Review QC reports:** Check qc_cohortValidation.csv and qc_processMeta.csv
+3. **Examine schema:** Use schema_review.csv to understand data structure
+4. **Handle issues:** If cohorts are missing or zero, investigate in developing_the_pipeline
+5. **Continue dissemination:** Use exported results for publication or further analysis
 
 ## See Also
 
-- [Running the Pipeline](running_the_pipeline.html) - Where results come from
-- [The Ulysses Standard Repository Structure](picard_repository_structure.html) - Where results go
-- [Evidence Generation Plan](evidence_generation_plan.html) - Strategic organization of outputs
+- [Running the Pipeline](running_the_pipeline.html) - Production execution
+- [Developing the Pipeline](developing_the_pipeline.html) - Testing and iteration during development
+- [Loading Inputs](loading_inputs.html) - Cohort and concept set setup
