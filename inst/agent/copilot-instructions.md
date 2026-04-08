@@ -422,6 +422,7 @@ validate_cohort_data <- function(data) {
 **Adding a new cohort**
 - Place JSON or SQL file in `inputs/cohorts/`
 - See `03-loading-inputs.md` for manifest management
+- place any helper functions for making cohorts or concept sets in `extras/`. DO NOT USE `analysis/src/` for cohort/concept set helper functions. That folder is for analysis-specific utilities only.
 
 **Creating an analysis task**
 - Use `makeTaskFile()` to generate template in `analysis/tasks/`

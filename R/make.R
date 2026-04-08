@@ -709,3 +709,193 @@ makePrintFriendlyFile <- function(cohorts_dir = "inputs/cohorts",
   invisible(output_files)
 }
 
+
+#' @title Initialize or Restore Agent Mode for Cloned Repository
+#' @description When a Picard repository is cloned, agent mode files (.gitignored) won't be present.
+#'   This function checks if agent mode is available and restores it using metadata from existing repo files.
+#'   Agent mode provides VS Code Copilot with study context through copilot-instructions.md and reference docs.
+#'
+#' @param projectPath Character. Path to the Picard repository. Defaults to current working directory.
+#' @param verbose Logical. Display informative messages during initialization. Default: TRUE
+#'
+#' @return Invisibly returns a list with:
+#'   - `agent_mode_active`: Logical. TRUE if agent mode files are now available
+#'   - `files_created`: Character vector of files that were created/restored
+#'   - `already_existed`: Logical. TRUE if agent mode files already existed
+#'
+#' @details
+#' Agent mode setup consists of:
+#' - `.agent/` folder with reference documentation
+#' - `copilot-instructions.md` at workspace root (auto-loaded by VS Code Copilot)
+#' - `.agent/copilot-instructions.md` (backup/reference)
+#'
+#' Study metadata is extracted from existing repo files:
+#' - Study title and project name from README.md
+#' - Tool type from config.yml
+#' - Repository name from the repo folder name
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#'   # Restore agent mode in current repository
+#'   initAgentMode()
+#'
+#'   # Restore in specific repository
+#'   initAgentMode(projectPath = "/path/to/study_repo")
+#' }
+initAgentMode <- function(projectPath = here::here(), verbose = TRUE) {
+  projectPath <- fs::path_expand(projectPath)
+  repoPath <- projectPath
+
+  if (verbose) cli::cli_h2("Initializing Agent Mode Configuration")
+
+  # Check if agent mode already exists
+  agent_folder <- fs::path(repoPath, ".agent")
+  root_instructions <- fs::path(repoPath, "copilot-instructions.md")
+  reference_docs_folder <- fs::path(agent_folder, "reference-docs")
+
+  agent_mode_exists <- fs::dir_exists(agent_folder) &&
+    fs::file_exists(root_instructions) &&
+    fs::dir_exists(reference_docs_folder)
+
+  if (agent_mode_exists) {
+    if (verbose) cli::cli_alert_info("Agent mode already initialized")
+    ll <- list(
+      agent_mode_active = TRUE,
+      files_created = character(0),
+      already_existed = TRUE
+    )
+    return(ll)
+  }
+
+  if (verbose) cli::cli_inform("Agent mode not found. Restoring from package templates...")
+
+  tryCatch({
+    # Extract study metadata from repository
+    if (verbose) cli::cli_inform("Extracting study metadata from repository...")
+
+    # Get repository name from folder
+    repoName <- basename(repoPath)
+
+    # Extract from README.md
+    readme_path <- fs::path(repoPath, "README.md")
+    if (!fs::file_exists(readme_path)) {
+      cli::cli_alert_warning("README.md not found. Using defaults for study metadata.")
+      studyName <- repoName
+      projectName <- repoName
+    } else {
+      readme_content <- readr::read_file(readme_path)
+
+      # Try to extract study title from "Study Title:" field
+      study_title_match <- stringr::str_match(
+        readme_content,
+        "Study Title:\\s*([^\n]+)"
+      )
+      studyName <- if (!is.na(study_title_match[1, 2])) {
+        stringr::str_trim(study_title_match[1, 2])
+      } else {
+        repoName
+      }
+
+      # Use project name if available, otherwise use repoName
+      projectName <- repoName
+    }
+
+    # Extract toolType from config.yml
+    config_path <- fs::path(repoPath, "config.yml")
+    if (!fs::file_exists(config_path)) {
+      cli::cli_alert_warning("config.yml not found. Using 'dbms' as default toolType.")
+      toolType <- "dbms"
+    } else {
+      toolType <- tryCatch(
+        {
+          # Try to extract toolType if it exists, otherwise default to checking database blocks
+          config_content <- readr::read_file(config_path)
+          if (grepl("database:", config_content)) {
+            "dbms"
+          } else {
+            "external"
+          }
+        },
+        error = function(e) {
+          cli::cli_alert_warning("Could not parse config.yml. Using 'dbms' as default.")
+          "dbms"
+        }
+      )
+    }
+
+    databaseLabel <- "Database"
+
+    if (verbose) {
+      cli::cli_inform(c(
+        "Extracted metadata:",
+        "  Repository: {repoName}",
+        "  Study: {studyName}",
+        "  Project: {projectName}",
+        "  Tool Type: {toolType}"
+      ))
+    }
+
+    # Create .agent folder
+    fs::dir_create(agent_folder)
+
+    # Read and substitute copilot-instructions.md template
+    if (verbose) cli::cli_inform("Copying and customizing instructions template...")
+    instructions_template <- fs::path_package("picard", "agent/copilot-instructions.md") |>
+      readr::read_file()
+
+    instructions_content <- glue::glue(instructions_template, .open = "{{", .close = "}}")
+
+    # Write to .agent folder for reference
+    instructions_file <- fs::path(agent_folder, "copilot-instructions.md")
+    readr::write_file(x = instructions_content, file = instructions_file)
+    cli::cli_alert_success("Created {.file {fs::path_rel(instructions_file)}}")
+
+    # Write to workspace root so Copilot automatically picks it up
+    root_instructions_file <- fs::path(repoPath, "copilot-instructions.md")
+    readr::write_file(x = instructions_content, file = root_instructions_file)
+    cli::cli_alert_success("Created {.file {fs::path_rel(root_instructions_file)}} (workspace root)")
+
+    # Copy reference documentation files
+    if (verbose) cli::cli_inform("Copying reference documentation...")
+    fs::dir_create(reference_docs_folder)
+
+    # Get list of reference files from inst/agent
+    agent_package_folder <- fs::path_package("picard", "agent")
+
+    # List all markdown files and filter for numbered ones
+    all_files <- fs::dir_ls(agent_package_folder, type = "file", recurse = FALSE)
+    reference_files <- all_files[grepl("^\\d{2}-.*\\.md$", fs::path_file(all_files))]
+
+    # Copy each reference file
+    if (length(reference_files) > 0) {
+      purrr::walk(reference_files, function(ref_file) {
+        base_name <- fs::path_file(ref_file)
+        dest_file <- fs::path(reference_docs_folder, base_name)
+        fs::file_copy(ref_file, dest_file, overwrite = TRUE)
+      })
+      cli::cli_alert_success(
+        "Copied {length(reference_files)} reference documents to {.file {fs::path_rel(reference_docs_folder)}}"
+      )
+    } else {
+      cli::cli_alert_warning("No numbered reference documentation files found in agent package")
+    }
+
+    if (verbose) cli::cli_alert_success("Agent mode successfully initialized")
+
+    files_created <- c(
+      "copilot-instructions.md",
+      ".agent/copilot-instructions.md",
+      paste0(".agent/reference-docs/", fs::path_file(reference_files))
+    )
+
+    invisible(list(
+      agent_mode_active = TRUE,
+      files_created = files_created,
+      already_existed = FALSE
+    ))
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to initialize agent mode: {e$message}")
+    stop(e)
+  })
+}

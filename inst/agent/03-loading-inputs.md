@@ -46,7 +46,78 @@ This launches a Shiny app where you can add/edit cohort metadata without touchin
 
 ### Step 2: Import Cohort Definitions from ATLAS
 
-Connect to ATLAS and download cohort JSON definitions:
+#### Setting up Atlas Credentials
+
+Before connecting to ATLAS, you must configure your credentials in your `.Renviron` file. These credentials authenticate your connection to the ATLAS WebAPI.
+
+**A: View the credential template**
+
+First, see the required credentials format:
+
+```r
+templateAtlasCredentials()
+```
+
+This displays a template with the following credentials you'll need to set:
+
+- **`atlasBaseUrl`**: The base URL to your ATLAS WebAPI (e.g., `https://organization-atlas.com/WebAPI`)
+- **`atlasAuthMethod`**: The authentication method (e.g., `ad` for Active Directory, `oauth`, etc.)
+- **`atlasUser`**: Your ATLAS username or email
+- **`atlasPassword`**: Your ATLAS password
+
+**B: Set Credenitals** 
+
+Route A: .Renviron
+
+```r
+usethis::edit_r_environ()
+```
+
+This opens your `.Renviron` file. Add these lines (substitute your actual credentials):
+
+```
+atlasBaseUrl='https://organization-atlas.com/WebAPI'
+atlasAuthMethod='ad'
+atlasUser='atlas.user@company.com'
+atlasPassword='YourPassword'
+```
+
+⚠️ **Important Security Note:** Never commit `.Renviron` to version control. It should already be done but place it in `.gitignore` to prevent accidentally exposing credentials.
+
+Route B: keyring
+
+For **enhanced security**, store credentials in the keyring package which keeps them encrypted:
+
+```r
+# First, install keyring if needed
+install.packages("keyring")
+
+# Store each credential securely in keyring under service "picard"
+# a prompt will show where you will be asked to place the credential you wish to stor
+keyring::key_set(service = "picard", username = "atlasBaseUrl")
+keyring::key_set(service = "picard", username = "atlasAuthMethod")
+keyring::key_set(service = "picard", username = "atlasUser")
+keyring::key_set(service = "picard", username = "atlasPassword")
+
+# Verify credentials are stored
+keyring::key_list(service = "picard")
+```
+
+Once stored in keyring, simply connect:
+
+```r
+# All credentials are retrieved automatically from keyring service "picard"
+atlasConn <- setAtlasConnection(useKeyring = TRUE)
+```
+
+**Alternative: Add credentials directly to .Renviron (Less secure)**
+
+If you prefer not to use keyring, you can add credentials directly:
+
+
+**C: Connect and import**
+
+Once credentials are configured, connect to ATLAS and download cohort definitions:
 
 ```r
 atlasConn <- setAtlasConnection()
@@ -247,7 +318,31 @@ inputs/
     └── json/                      # ATLAS JSON exports
         ├── concept_set_1.json
         └── concept_set_2.json
+
+extras/
+├── cohort_helpers.R              # Custom helper functions for cohort operations
+├── concept_set_utilities.R       # Custom utilities for concept set work
+└── ...                           # Any other scripts or explorations
+
+analysis/src/
+├── functions.R                   # Functions that correspond to analysis tasks only
+└── sql/                          # SQL templates for analysis tasks
 ```
+
+## Where to Put Helper Functions
+
+- **Helper functions for cohort/concept set work:** `extras/` folder
+  - Custom functions for validating definitions
+  - Scripts for exploring or processing manifests
+  - One-off analyses or data exploration scripts
+  - Development and testing scripts
+
+- **Functions in `analysis/src/`:** Reserved for functions that directly support **analysis tasks**
+  - Functions called by task scripts in `analysis/tasks/`
+  - SQL query builders or result processors
+  - Pipeline-specific utilities
+
+Keep development and exploration code in `extras/` to maintain a clean separation between exploratory work and production analysis pipeline code.
 
 ---
 

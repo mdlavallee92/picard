@@ -195,7 +195,7 @@ password: !expr Sys.getenv('dbPassword') # Evaluates R code: retrieves DB_PASSWO
 You can use any R function wrapped in `!expr` to retrieve credentials, including:
 
 - **Environment variables:** `!expr Sys.getenv('VAR_NAME')`
-- **Keyring package:** `!expr keyring::key_get('service_name', 'username')`
+- **Keyring package:** `!expr keyring::key_get(service = 'picard', username = 'atlasUser')`
 - **Custom functions:** `!expr my_secure_fetch_credential('db_password')`
 
 **Best practice:** Always use `!expr` with a secure credential storage system. Never store passwords or connection strings as plain text in config.yml or commit them to git.
