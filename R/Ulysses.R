@@ -176,7 +176,7 @@ UlyssesStudy <- R6::R6Class(
         
         usethis::use_git_ignore(
           c(".Rproj.user", ".Ruserdata", ".Rhistory", ".RData",
-            ".Renviron", "exec/results", "errorReportSql.txt")
+            ".Renviron", "errorReportSql.txt", ".agent/", "copilot-instructions.md")
         )
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize R project: {e$message}")
@@ -349,12 +349,17 @@ UlyssesStudy <- R6::R6Class(
         instructions_template <- fs::path_package("picard", "agent/copilot-instructions.md") |>
           readr::read_file()
         
-        instructions_content <- glue::glue(instructions_template)
+        instructions_content <- glue::glue(instructions_template, .open = "{{", .close = "}}")
         
+        # Write to .agent folder for reference
         instructions_file <- fs::path(agent_folder, "copilot-instructions.md")
         readr::write_file(x = instructions_content, file = instructions_file)
-        
         cli::cli_alert_success("Created {.file {fs::path_rel(instructions_file)}}")
+        
+        # Write to workspace root so Copilot automatically picks it up
+        root_instructions_file <- fs::path(repoPath, "copilot-instructions.md")
+        readr::write_file(x = instructions_content, file = root_instructions_file)
+        cli::cli_alert_success("Created {.file {fs::path_rel(root_instructions_file)}} (workspace root)")
         
         # Copy reference documentation files
         reference_docs_folder <- fs::path(agent_folder, "reference-docs")
@@ -362,18 +367,21 @@ UlyssesStudy <- R6::R6Class(
         
         # Get list of reference files from inst/agent
         agent_package_folder <- fs::path_package("picard", "agent")
-        reference_files <- fs::dir_ls(
-          agent_package_folder,
-          regexp = "^\\d{2}-.*\\.md$",
-          recurse = FALSE
-        )
+        
+        # List all markdown files and filter for numbered ones
+        all_files <- fs::dir_ls(agent_package_folder, type = "file", recurse = FALSE)
+        reference_files <- all_files[grepl("^\\d{2}-.*\\.md$", fs::path_file(all_files))]
         
         # Copy each reference file
-        purrr::walk(reference_files, function(ref_file) {
-          base_name <- fs::path_file(ref_file)
-          dest_file <- fs::path(reference_docs_folder, base_name)
-          fs::file_copy(ref_file, dest_file, overwrite = TRUE)
-        })
+        if (length(reference_files) > 0) {
+          purrr::walk(reference_files, function(ref_file) {
+            base_name <- fs::path_file(ref_file)
+            dest_file <- fs::path(reference_docs_folder, base_name)
+            fs::file_copy(ref_file, dest_file, overwrite = TRUE)
+          })
+        } else {
+          cli::cli_alert_warning("No numbered reference documentation files found in agent package folder")
+        }
         
         cli::cli_alert_success(
           "Created {.file {fs::path_rel(reference_docs_folder)}} with {length(reference_files)} reference documents"
