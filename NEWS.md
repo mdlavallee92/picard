@@ -3,6 +3,8 @@
 - Split production and test mode for pipeline runs
 - Add better vignettes for using picard
 - bug fixes
+- add agent mode to picard
+- add keyring compatability to setAtlasConnection
 
 
 # picard 0.0.1
