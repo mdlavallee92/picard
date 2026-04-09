@@ -37,10 +37,28 @@ If your study repository already exists on GitHub, GitLab, or another Git hostin
 ```bash
 # Clone the repository
 git clone https://github.com/myorg/diabetes_study.git
-
 ```
 
-After cloning, click on the .Rproj and you can immediately start working - all configuration files, directory structure, and git history are already in place.
+After cloning, the repository has all configuration files, directory structure, and git history already in place. Next, click on the .Rproj file to open the project in RStudio and you can immediately start working.
+
+However, agent mode files are excluded from git (for security and customization). You'll need to restore them using `initAgentMode()`:
+
+```{r eval = FALSE}
+library(picard)
+
+# Restore agent mode configuration (if not already present)
+initAgentMode(projectPath = here::here(), verbose = TRUE)
+```
+
+This function:
+1. **Checks if agent mode exists** - Looks for `.agent/` folder and `copilot-instructions.md`
+2. **If missing**, restores from package templates by:
+   - Extracting study metadata from README.md and config.yml
+   - Creating `.agent/` folder with reference documentation
+   - Writing customized `copilot-instructions.md` to workspace root (auto-loaded by VS Code Copilot)
+   - Copying numbered reference guides to `.agent/reference-docs/`
+
+After running `initAgentMode()`, you can open the repository in VS Code and Copilot will automatically use the study context to provide AI assistance tailored to your project.
 
 ---
 

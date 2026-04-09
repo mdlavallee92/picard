@@ -7,10 +7,31 @@
     <loc>https://ohdsi.github.io/picard/articles/cohorts.html</loc>
   </url>
   <url>
+    <loc>https://ohdsi.github.io/picard/articles/developing_the_pipeline.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/evidence_generation_plan.html</loc>
+  </url>
+  <url>
     <loc>https://ohdsi.github.io/picard/articles/getting-started.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/articles/index.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/launching_a_study.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/loading_inputs.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/picard_repository_structure.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/post_processing.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/articles/running_the_pipeline.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/authors.html</loc>
@@ -23,6 +44,9 @@
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/news/index.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/addTestMainFile.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/agentSaveWork.html</loc>
@@ -44,6 +68,9 @@
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/cleanColumnNames.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/clearPendingPR.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/CohortDef.html</loc>
@@ -109,6 +136,12 @@
     <loc>https://ohdsi.github.io/picard/reference/execStudyTask.html</loc>
   </url>
   <url>
+    <loc>https://ohdsi.github.io/picard/reference/execute_pipeline.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/execute_task.html</loc>
+  </url>
+  <url>
     <loc>https://ohdsi.github.io/picard/reference/ExecutionSettings.html</loc>
   </url>
   <url>
@@ -139,6 +172,9 @@
     <loc>https://ohdsi.github.io/picard/reference/index.html</loc>
   </url>
   <url>
+    <loc>https://ohdsi.github.io/picard/reference/initAgentMode.html</loc>
+  </url>
+  <url>
     <loc>https://ohdsi.github.io/picard/reference/initializeRenv.html</loc>
   </url>
   <url>
@@ -155,6 +191,15 @@
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/makeExecOptions.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/makePrintFriendlyFile.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/makeSrcFile.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/makeSrcSqlFile.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/makeStudyMeta.html</loc>
@@ -199,6 +244,9 @@
     <loc>https://ohdsi.github.io/picard/reference/saveWork.html</loc>
   </url>
   <url>
+    <loc>https://ohdsi.github.io/picard/reference/save_pr_reference.html</loc>
+  </url>
+  <url>
     <loc>https://ohdsi.github.io/picard/reference/setAtlasConnection.html</loc>
   </url>
   <url>
@@ -224,6 +272,12 @@
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/templateAtlasCredentials.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/testStudyPipeline.html</loc>
+  </url>
+  <url>
+    <loc>https://ohdsi.github.io/picard/reference/testStudyTask.html</loc>
   </url>
   <url>
     <loc>https://ohdsi.github.io/picard/reference/UlyssesStudy.html</loc>

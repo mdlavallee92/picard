@@ -46,6 +46,9 @@ reference:
     desc: "Functions for creating objects and structures (make*)"
     contents:
       - makeExecOptions
+      - makePrintFriendlyFile
+      - makeSrcFile
+      - makeSrcSqlFile
       - makeStudyMeta
       - makeTaskFile
       - makeUlyssesStudySettings
@@ -53,6 +56,7 @@ reference:
   - title: "Initialization Functions"
     desc: "Functions for initializing components (init*)"
     contents:
+      - initAgentMode
       - initializeRenv
 
   - title: "Build Functions"
@@ -78,7 +82,6 @@ reference:
     desc: "Functions for executing study tasks (exec*)"
     contents:
       - execStudyPipeline
-      - execStudyTask
 
   - title: "Configuration Functions"
     desc: "Functions for configuration and setup (set*)"
@@ -100,6 +103,7 @@ reference:
     contents:
       - agentSaveWork
       - cleanColumnNames
+      - clearPendingPR
       - displayTaskStatusReport
       - documentDependencies
       - formatFloats
@@ -124,6 +128,8 @@ reference:
       - snapshotEnvironment
       - standardizeDataTypes
       - templateAtlasCredentials
+      - testStudyPipeline
+      - testStudyTask
       - updateStudyVersion
       - validateCohortResults
       - validateConfigYaml
