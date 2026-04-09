@@ -12,7 +12,7 @@ makeUlyssesStudySettings(
   studyMeta,
   execOptions = NULL,
   gitRemote = NULL,
-  renvLock = NULL
+  renvLockFile = NULL
 )
 ```
 
@@ -39,9 +39,9 @@ makeUlyssesStudySettings(
 
   a remote url used to clone and set remote git
 
-- renvLock:
+- renvLockFile:
 
-  file path to a renvLock file
+  file path to a renvLockFile file
 
 ## Value
 

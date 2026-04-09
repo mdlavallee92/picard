@@ -11,7 +11,7 @@ including directory structure, configuration files, and version control initiali
 
     <a class="navbar-brand me-2" href="../index.html">picard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Released version">0.0.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Released version">0.0.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -58,7 +58,7 @@ comprehensive repository initialization.</p><div class="section">
 <li><p><code>toolType</code>: Tool type, either "dbms" or "external" (read/write)</p></li>
 <li><p><code>studyMeta</code>: StudyMeta object containing metadata (read/write)</p></li>
 <li><p><code>gitRemote</code>: Optional git remote URL (read/write)</p></li>
-<li><p><code>renvLock</code>: Optional path to renv lock file (read/write)</p></li>
+<li><p><code>renvLockFile</code>: Optional path to renv lock file (read/write)</p></li>
 </ul></div>
 
 <div class="section">
@@ -91,7 +91,7 @@ comprehensive repository initialization.</p><div class="section">
 <dd><p>Optional URL for git remote repository. Can be read or set with validation.</p></dd>
 
 
-<dt><code>renvLock</code></dt>
+<dt><code>renvLockFile</code></dt>
 <dd><p>Optional path to renv lock file for reproducibility. Can be read or set with validation.</p></dd>
 
 
@@ -117,7 +117,7 @@ comprehensive repository initialization.</p><div class="section">
 <span>  <span class="va">studyMeta</span>,</span>
 <span>  <span class="va">execOptions</span>,</span>
 <span>  gitRemote <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  renvLock <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  renvLockFile <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div><p></p></div>
 </div>
 
@@ -147,7 +147,7 @@ comprehensive repository initialization.</p><div class="section">
 <dd><p>Character string. Optional URL for git remote repository.</p></dd>
 
 
-<dt><code>renvLock</code></dt>
+<dt><code>renvLockFile</code></dt>
 <dd><p>Character string. Optional path to renv lock file for reproducibility.</p></dd>
 
 

@@ -1,26 +1,55 @@
-# Function to execute all study task in analysis folder on set of configBlock
+# Production Study Pipeline Execution
 
-Function to execute all study task in analysis folder on set of
-configBlock
+Executes the full study pipeline in production mode with full
+validation, version management, and reproducibility tracking. Creates a
+release branch, runs the complete pipeline, provides PR instructions,
+and saves reference to PENDING_PR.md.
 
 ## Usage
 
 ``` r
-execStudyPipeline(configBlock, updateType, env = rlang::caller_env())
+execStudyPipeline(
+  configBlock,
+  updateType,
+  skipRenv = FALSE,
+  env = rlang::caller_env()
+)
 ```
 
 ## Arguments
 
 - configBlock:
 
-  name of one or multiple configBlock to use in the execution
+  Character or character vector. Name(s) of config block(s) to use.
 
 - updateType:
 
-  the type of version increment: 'major', 'minor', or 'patch'. The
-  current version will be read from config.yml and incremented
-  accordingly before pipeline execution.
+  Character. Type of version increment: 'major', 'minor', or 'patch'.
+
+  - MAJOR: Breaking changes
+
+  - MINOR: New features, backward compatible
+
+  - PATCH: Bug fixes, no new features
+
+- skipRenv:
+
+  Logical. If TRUE, skips renv validation. Defaults to FALSE. Useful for
+  testing issues. Default: FALSE
 
 - env:
 
-  the execution environment
+  The execution environment. Defaults to caller environment.
+
+## Value
+
+Invisibly returns task results list
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+# Run production pipeline with patch version increment
+execStudyPipeline(configBlock = "myConfig", updateType = "patch")
+} # }
+```

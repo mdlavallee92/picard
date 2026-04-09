@@ -23,7 +23,7 @@ ExecOptions to provide comprehensive repository initialization.
 
 - `gitRemote`: Optional git remote URL (read/write)
 
-- `renvLock`: Optional path to renv lock file (read/write)
+- `renvLockFile`: Optional path to renv lock file (read/write)
 
 ### Methods
 
@@ -57,7 +57,7 @@ ExecOptions to provide comprehensive repository initialization.
   Optional URL for git remote repository. Can be read or set with
   validation.
 
-- `renvLock`:
+- `renvLockFile`:
 
   Optional path to renv lock file for reproducibility. Can be read or
   set with validation.
@@ -87,7 +87,7 @@ Initialize a new UlyssesStudy instance with configuration parameters.
       studyMeta,
       execOptions,
       gitRemote = NULL,
-      renvLock = NULL
+      renvLockFile = NULL
     )
 
 #### Arguments
@@ -117,7 +117,7 @@ Initialize a new UlyssesStudy instance with configuration parameters.
 
   Character string. Optional URL for git remote repository.
 
-- `renvLock`:
+- `renvLockFile`:
 
   Character string. Optional path to renv lock file for reproducibility.
 

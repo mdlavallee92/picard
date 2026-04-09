@@ -31,6 +31,12 @@ Functions for creating objects and structures (make\*)
 
 - [`makeExecOptions()`](https://ohdsi.github.io/picard/reference/makeExecOptions.md)
   : Make ExecOptions for Ulysses
+- [`makePrintFriendlyFile()`](https://ohdsi.github.io/picard/reference/makePrintFriendlyFile.md)
+  : Generate Print-Friendly Cohort Documentation from JSON
+- [`makeSrcFile()`](https://ohdsi.github.io/picard/reference/makeSrcFile.md)
+  : Create a Source Utility File
+- [`makeSrcSqlFile()`](https://ohdsi.github.io/picard/reference/makeSrcSqlFile.md)
+  : Create a SqlRender SQL File
 - [`makeStudyMeta()`](https://ohdsi.github.io/picard/reference/makeStudyMeta.md)
   : Make Study Meta for Ulysses
 - [`makeTaskFile()`](https://ohdsi.github.io/picard/reference/makeTaskFile.md)
@@ -42,6 +48,8 @@ Functions for creating objects and structures (make\*)
 
 Functions for initializing components (init\*)
 
+- [`initAgentMode()`](https://ohdsi.github.io/picard/reference/initAgentMode.md)
+  : Initialize or Restore Agent Mode for Cloned Repository
 - [`initializeRenv()`](https://ohdsi.github.io/picard/reference/initializeRenv.md)
   : Initialize Renv for Project
 
@@ -82,10 +90,7 @@ Functions for creating new objects (create\*)
 Functions for executing study tasks (exec\*)
 
 - [`execStudyPipeline()`](https://ohdsi.github.io/picard/reference/execStudyPipeline.md)
-  : Function to execute all study task in analysis folder on set of
-  configBlock
-- [`execStudyTask()`](https://ohdsi.github.io/picard/reference/execStudyTask.md)
-  : Function to execute a study task in Ulysses
+  : Production Study Pipeline Execution
 
 ## Configuration Functions
 
@@ -119,6 +124,8 @@ Other utility and helper functions
   : Save Work for Agents (Automated, No Prompts)
 - [`cleanColumnNames()`](https://ohdsi.github.io/picard/reference/cleanColumnNames.md)
   : Clean Column Names to Standard Format
+- [`clearPendingPR()`](https://ohdsi.github.io/picard/reference/clearPendingPR.md)
+  : Clear Pending PR Reference
 - [`displayTaskStatusReport()`](https://ohdsi.github.io/picard/reference/displayTaskStatusReport.md)
   : Display Task Status Report
 - [`documentDependencies()`](https://ohdsi.github.io/picard/reference/documentDependencies.md)
@@ -167,6 +174,10 @@ Other utility and helper functions
   : Standardize Data Types
 - [`templateAtlasCredentials()`](https://ohdsi.github.io/picard/reference/templateAtlasCredentials.md)
   : Template for setting Atlas Credentials
+- [`testStudyPipeline()`](https://ohdsi.github.io/picard/reference/testStudyPipeline.md)
+  : Test Study Pipeline
+- [`testStudyTask()`](https://ohdsi.github.io/picard/reference/testStudyTask.md)
+  : Test a Single Study Task
 - [`updateStudyVersion()`](https://ohdsi.github.io/picard/reference/updateStudyVersion.md)
   : Function to update the study version
 - [`validateCohortResults()`](https://ohdsi.github.io/picard/reference/validateCohortResults.md)

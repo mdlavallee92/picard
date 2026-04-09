@@ -1,5 +1,13 @@
 # Changelog
 
+## picard 0.0.2
+
+- Split production and test mode for pipeline runs
+- Add better vignettes for using picard
+- bug fixes
+- add agent mode to picard
+- add keyring compatability to setAtlasConnection
+
 ## picard 0.0.1
 
 ### New Features
@@ -62,14 +70,6 @@
 - ATLAS connection setup
 - Contributor and team management
 
-#### Development & Maintenance
-
-- Roxygen2-based documentation system
-- Automated package maintenance tools
-- pkgdown reference generation and updates
-- Documentation validation framework
-- Environment snapshots and restoration
-
 #### Utilities
 
 - Repository validation framework
@@ -77,16 +77,3 @@
 - Environment hash detection for dependency tracking
 - File and directory management utilities
 - Archive and export functionality
-
-### Known Limitations
-
-- Database testing requires live database connection
-- Pandoc required for full documentation building
-- DBMS-specific syntax support varies by platform
-
-### Future Roadmap
-
-- Enhanced validation rules for cohort definitions
-- Expanded data quality checks
-- Additional visualization tools
-- Cloud-based repository options
