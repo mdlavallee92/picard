@@ -29,7 +29,7 @@
 #' - `toolType`: Tool type, either "dbms" or "external" (read/write)
 #' - `studyMeta`: StudyMeta object containing metadata (read/write)
 #' - `gitRemote`: Optional git remote URL (read/write)
-#' - `renvLock`: Optional path to renv lock file (read/write)
+#' - `renvLockFile`: Optional path to renv lock file (read/write)
 #'
 #' ## Methods
 #'
@@ -49,7 +49,7 @@ UlyssesStudy <- R6::R6Class(
     #' @param studyMeta StudyMeta object. Contains study metadata and configuration.
     #' @param execOptions ExecOptions object. Contains execution settings and options.
     #' @param gitRemote Character string. Optional URL for git remote repository.
-    #' @param renvLock Character string. Optional path to renv lock file for reproducibility.
+    #' @param renvLockFile Character string. Optional path to renv lock file for reproducibility.
     #'
     #' @return Invisibly returns self for method chaining.
     initialize = function(repoName,
@@ -58,7 +58,7 @@ UlyssesStudy <- R6::R6Class(
                           studyMeta,
                           execOptions,
                           gitRemote = NULL,
-                          renvLock = NULL
+                          renvLockFile = NULL
     ) {
 
       checkmate::assert_string(x = repoName, min.chars = 1)
@@ -77,8 +77,8 @@ UlyssesStudy <- R6::R6Class(
       checkmate::assert_string(x = gitRemote, null.ok = TRUE)
       private[[".gitRemote"]] <- gitRemote
 
-      checkmate::assert_string(x = renvLock, null.ok = TRUE)
-      private[[".renvLock"]] <- renvLock
+      checkmate::assert_string(x = renvLockFile, null.ok = TRUE)
+      private[[".renvLockFile"]] <- renvLockFile
     },
 
     #' @description
@@ -120,11 +120,16 @@ UlyssesStudy <- R6::R6Class(
         private$.initConfigFile()
         private$.initQuarto()
         private$.initMainExec()
+        private$.initTestMainExec()
         private$.initAgent()
         
         # Step 4: Initialize git
         if (verbose) cli::cli_inform("Initializing git repository...")
         private$.initGit()
+        
+        # Step 5: Add renv lock file if supplied
+        if (verbose) cli::cli_inform("Setting up renv configuration...")
+        private$.addRenvLockFile()
         
         cli::cli_alert_success("Repository successfully initialized at {repoPath}")
         
@@ -148,7 +153,7 @@ UlyssesStudy <- R6::R6Class(
     .studyMeta = NULL,
     .execOptions = NULL,
     .gitRemote = NULL,
-    .renvLock = NULL,
+    .renvLockFile = NULL,
 
     # Helper method to get expanded repository path
     .getRepoPath = function() {
@@ -171,7 +176,7 @@ UlyssesStudy <- R6::R6Class(
         
         usethis::use_git_ignore(
           c(".Rproj.user", ".Ruserdata", ".Rhistory", ".RData",
-            ".Renviron", "exec/results", "errorReportSql.txt")
+            ".Renviron", "errorReportSql.txt", ".agent/", "copilot-instructions.md")
         )
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize R project: {e$message}")
@@ -224,10 +229,9 @@ UlyssesStudy <- R6::R6Class(
         gert::git_init(repoPath)
         
         if (!is.null(private$.gitRemote)) {
-          addGitRemoteToUlysses(
+          git_remote_ulysses(
             gitRemoteUrl = private$.gitRemote,
-            gitRemoteName = "origin",
-            commitMessage = "Initialize Ulysses Repo for study"
+            gitRemoteName = "origin"
           )
         } else {
           gert::git_add(files = ".")
@@ -238,6 +242,35 @@ UlyssesStudy <- R6::R6Class(
         cli::cli_alert_danger("Failed to initialize git: {e$message}")
         stop(e)
       })
+      invisible(NULL)
+    },
+
+    .addRenvLockFile = function() {
+      repoPath <- private$.getRepoPath()
+      
+      if (!is.null(private$.renvLockFile)) {
+        tryCatch({
+          # Verify source file exists
+          if (!fs::file_exists(private$.renvLockFile)) {
+            stop("renvLockFile does not exist: ", private$.renvLockFile)
+          }
+          
+          # Copy file to repository root
+          fs::file_copy(
+            path = private$.renvLockFile,
+            new_path = fs::path(repoPath, "renv.lock"),
+            overwrite = TRUE
+          )
+          
+          cli::cli_alert_success("renv.lock file copied to {fs::path_rel(repoPath)}")
+        }, error = function(e) {
+          cli::cli_alert_danger("Failed to copy renv.lock file: {e$message}")
+          stop(e)
+        })
+      } else {
+        cli::cli_alert_info("No renvLockFile supplied. Consider running {.code renv::init()} in your project to set up a reproducible environment.")
+      }
+      
       invisible(NULL)
     },
 
@@ -277,19 +310,83 @@ UlyssesStudy <- R6::R6Class(
       invisible(NULL)
     },
 
+    .initTestMainExec = function() {
+      tryCatch({
+        addTestMainFile(
+          repoName = private$.repoName,
+          repoFolder = private$.repoFolder,
+          toolType = private$.toolType,
+          configBlocks = private$.execOptions$dbConnectionBlocks,
+          studyName = private$.studyMeta$studyTitle
+        )
+        cli::cli_alert_success("Created test flight script: {.file {fs::path(private$.repoName, 'extras/test_main.R')}}")
+      }, error = function(e) {
+        cli::cli_alert_danger("Failed to initialize test execution file: {e$message}")
+        stop(e)
+      })
+      invisible(NULL)
+    },
+
     .initAgent = function() {
       repoPath <- private$.getRepoPath()
       tryCatch({
+        # Create .agent folder
         agent_folder <- fs::path(repoPath, ".agent")
         fs::dir_create(agent_folder)
         
-        agent_template <- fs::path_package("picard", "templates/agent_skills.md") |>
+        # Prepare template substitutions for the study
+        studyName <- private$.studyMeta$studyTitle
+        projectName <- ifelse(
+          !is.null(private$.studyMeta$projectName) && private$.studyMeta$projectName != "",
+          private$.studyMeta$projectName,
+          private$.repoName
+        )
+        databaseLabel <- "Database"
+        toolType <- private$.toolType
+        repoName <- private$.repoName
+        
+        # Read and substitute copilot-instructions.md template
+        instructions_template <- fs::path_package("picard", "agent/copilot-instructions.md") |>
           readr::read_file()
         
-        agent_file <- fs::path(agent_folder, "agent_skills.md")
-        readr::write_file(x = agent_template, file = agent_file)
+        instructions_content <- glue::glue(instructions_template, .open = "{{", .close = "}}")
         
-        cli::cli_alert_success("Created {.file {fs::path_rel(agent_file)}}")
+        # Write to .agent folder for reference
+        instructions_file <- fs::path(agent_folder, "copilot-instructions.md")
+        readr::write_file(x = instructions_content, file = instructions_file)
+        cli::cli_alert_success("Created {.file {fs::path_rel(instructions_file)}}")
+        
+        # Write to workspace root so Copilot automatically picks it up
+        root_instructions_file <- fs::path(repoPath, "copilot-instructions.md")
+        readr::write_file(x = instructions_content, file = root_instructions_file)
+        cli::cli_alert_success("Created {.file {fs::path_rel(root_instructions_file)}} (workspace root)")
+        
+        # Copy reference documentation files
+        reference_docs_folder <- fs::path(agent_folder, "reference-docs")
+        fs::dir_create(reference_docs_folder)
+        
+        # Get list of reference files from inst/agent
+        agent_package_folder <- fs::path_package("picard", "agent")
+        
+        # List all markdown files and filter for numbered ones
+        all_files <- fs::dir_ls(agent_package_folder, type = "file", recurse = FALSE)
+        reference_files <- all_files[grepl("^\\d{2}-.*\\.md$", fs::path_file(all_files))]
+        
+        # Copy each reference file
+        if (length(reference_files) > 0) {
+          purrr::walk(reference_files, function(ref_file) {
+            base_name <- fs::path_file(ref_file)
+            dest_file <- fs::path(reference_docs_folder, base_name)
+            fs::file_copy(ref_file, dest_file, overwrite = TRUE)
+          })
+        } else {
+          cli::cli_alert_warning("No numbered reference documentation files found in agent package folder")
+        }
+        
+        cli::cli_alert_success(
+          "Created {.file {fs::path_rel(reference_docs_folder)}} with {length(reference_files)} reference documents"
+        )
+        
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize agent configuration: {e$message}")
         stop(e)
@@ -337,12 +434,12 @@ UlyssesStudy <- R6::R6Class(
       cli::cli_alert_info("Updated {.field gitRemote}")
     },
 
-    #' @field renvLock Optional path to renv lock file for reproducibility. Can be read or set with validation.
-    renvLock = function(value) {
-      if (missing(value)) return(private$.renvLock)
+    #' @field renvLockFile Optional path to renv lock file for reproducibility. Can be read or set with validation.
+    renvLockFile = function(value) {
+      if (missing(value)) return(private$.renvLockFile)
       checkmate::assert_string(x = value, null.ok = TRUE)
-      private[[".renvLock"]] <- value
-      cli::cli_alert_info("Updated {.field renvLock}")
+      private[[".renvLockFile"]] <- value
+      cli::cli_alert_info("Updated {.field renvLockFile}")
     }
   )
 )
@@ -890,7 +987,7 @@ listDefaultFolders <- function(repoPath) {
   analysisFolders <- c("src", "tasks")
   execFolders <- c('logs', 'results')
   inputFolders <- c("cohorts/json", "cohorts/sql", "conceptSets/json")
-  disseminationFolders <- c("quarto", "export", "documents")
+  disseminationFolders <- c("quarto", "export/merge", "export/pretty", "export/studyHubOutput", "documents")
 
   folders <- c(
     paste('inputs', inputFolders, sep = "/"),

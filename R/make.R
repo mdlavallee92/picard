@@ -89,7 +89,7 @@ makeExecOptions <- function(dbms,
 #' @param studyMeta a StudyMeta R6 class with the details describing the study
 #' @param execOptions a ExecOptions R6 class with the execution details needed for the study
 #' @param gitRemote a remote url used to clone and set remote git
-#' @param renvLock file path to a renvLock file
+#' @param renvLockFile file path to a renvLockFile file
 #' @returns A UlyssesStudy R6 class with the ulysses study details to make
 #' @export
 makeUlyssesStudySettings <- function(repoName,
@@ -98,7 +98,7 @@ makeUlyssesStudySettings <- function(repoName,
                                      studyMeta,
                                      execOptions = NULL,
                                      gitRemote = NULL,
-                                     renvLock = NULL) {
+                                     renvLockFile = NULL) {
   UlyssesStudy$new(
     repoName = repoName,
     repoFolder = repoFolder,
@@ -106,7 +106,7 @@ makeUlyssesStudySettings <- function(repoName,
     studyMeta = studyMeta,
     execOptions = execOptions,
     gitRemote = gitRemote,
-    renvLock = renvLock
+    renvLockFile = renvLockFile
   )
 }
 
@@ -392,4 +392,510 @@ makeTaskFile <- function(
 
   invisible(taskTemplate)
 
+}
+
+#' @title Create a Source Utility File
+#' @description Creates a new R script in the analysis/src folder for storing reusable utility functions.
+#'   Unlike task files, source files have no naming conventions or execution order requirements.
+#' @param fileName The name of the source file (e.g., "custom_analysis_functions")
+#' @param author The name of the author. Defaults to template text if NULL
+#' @param description A brief description of what the utilities in this file do. Defaults to template text if NULL
+#' @param projectPath The path to the project (defaults to current project)
+#' @param openFile Whether to open the file after creating it (default TRUE)
+#' @return Invisible character string containing the template content
+#' @details Source files are utility files that contain reusable functions sourced by one or more task files.
+#'   They have no naming convention requirements and execute in no particular order.
+#'   Create them as you need utility functions to avoid code duplication across tasks.
+#' @export
+#' @examples
+#' \dontrun{
+#' # Create a source file for custom analysis functions
+#' makeSrcFile(
+#'   fileName = "custom_analysis_functions",
+#'   author = "Jane Doe",
+#'   description = "Helper functions for cohort calculations and data validation"
+#' )
+#'
+#' # Create with minimal arguments (uses template defaults)
+#' makeSrcFile(fileName = "plotting_utilities")
+#' }
+makeSrcFile <- function(
+    fileName,
+    author = NULL,
+    description = NULL,
+    projectPath = here::here(),
+    openFile = TRUE) {
+
+  srcFolderPath <- fs::path(projectPath, "analysis/src")
+
+  # Ensure src directory exists
+  fs::dir_create(srcFolderPath, recurse = TRUE)
+
+  # Clean up filename
+  fileName <- snakecase::to_snake_case(fileName)
+
+  # Set defaults
+  if (is.null(author)) {
+    author <- "ADD AUTHOR NAME HERE"
+  }
+  if (is.null(description)) {
+    description <- "Reusable utility functions"
+  }
+
+  # Get study name from config
+  studyName <- config::get("projectName", file = fs::path(projectPath, "config.yml"))
+
+  # Read and populate template
+  srcTemplate <- fs::path_package(
+    package = "picard",
+    "templates/src.R"
+  ) |>
+    readr::read_file() |>
+    glue::glue(
+      fileName = fileName,
+      author = author,
+      description = description,
+      studyName = studyName
+    )
+
+  # Display message
+  txt <- glue::glue_col("Write {cyan {fileName}.R} to {yellow {srcFolderPath}}")
+  cli::cat_bullet(
+    txt,
+    bullet = "tick",
+    bullet_col = "green"
+  )
+
+  # Write the file
+  readr::write_file(
+    x = srcTemplate,
+    file = fs::path(srcFolderPath, fileName, ext = "R")
+  )
+
+  if (openFile) {
+    rstudioapi::navigateToFile(file = fs::path(srcFolderPath, fileName, ext = "R"))
+    cli::cat_bullet(
+      "Navigating to new source file",
+      bullet = "info",
+      bullet_col = "blue"
+    )
+  }
+
+  invisible(srcTemplate)
+
+}
+
+#' @title Create a SqlRender SQL File
+#' @description Creates a new SQL script in the analysis/src/sql folder for storing parameterized OMOP queries.
+#'   These files are rendered using SqlRender and executed against the CDM.
+#' @param fileName The name of the SQL file (e.g., "condition_occurrence_query")
+#' @param author The name of the author. Defaults to template text if NULL
+#' @param description A brief description of what this query does. Defaults to template text if NULL
+#' @param projectPath The path to the project (defaults to current project)
+#' @param openFile Whether to open the file after creating it (default TRUE)
+#' @return Invisible character string containing the template content
+#' @details SQL files in src/sql are parameterized queries meant to be rendered with SqlRender::render()
+#'   before execution. They should use @ notation for parameters (e.g., @cdmDatabaseSchema).
+#'   Document all parameters used in your query with comments at the top of the file.
+#' @export
+#' @examples
+#' \dontrun{
+#' # Create a SQL query for analyzing condition_occurrence
+#' makeSrcSqlFile(
+#'   fileName = "condition_occurrence_counts",
+#'   author = "Jane Doe",
+#'   description = "Count conditions by month in the CDM"
+#' )
+#'
+#' # Create with minimal arguments
+#' makeSrcSqlFile(fileName = "get_person_demographics")
+#' }
+makeSrcSqlFile <- function(
+    fileName,
+    author = NULL,
+    description = NULL,
+    projectPath = here::here(),
+    openFile = TRUE) {
+
+  sqlFolderPath <- fs::path(projectPath, "analysis/src/sql")
+
+  # Ensure sql directory exists
+  fs::dir_create(sqlFolderPath, recurse = TRUE)
+
+  # Clean up filename
+  fileName <- snakecase::to_snake_case(fileName)
+
+  # Set defaults
+  if (is.null(author)) {
+    author <- "ADD AUTHOR NAME HERE"
+  }
+  if (is.null(description)) {
+    description <- "SqlRender parameterized query"
+  }
+
+  # Get study name from config
+  studyName <- config::get("projectName", file = fs::path(projectPath, "config.yml"))
+
+  # Read and populate template
+  sqlTemplate <- fs::path_package(
+    package = "picard",
+    "templates/src_sql.sql"
+  ) |>
+    readr::read_file() |>
+    glue::glue(
+      fileName = fileName,
+      author = author,
+      description = description,
+      studyName = studyName
+    )
+
+  # Display message
+  txt <- glue::glue_col("Write {cyan {fileName}.sql} to {yellow {sqlFolderPath}}")
+  cli::cat_bullet(
+    txt,
+    bullet = "tick",
+    bullet_col = "green"
+  )
+
+  # Write the file
+  readr::write_file(
+    x = sqlTemplate,
+    file = fs::path(sqlFolderPath, fileName, ext = "sql")
+  )
+
+  if (openFile) {
+    rstudioapi::navigateToFile(file = fs::path(sqlFolderPath, fileName, ext = "sql"))
+    cli::cat_bullet(
+      "Navigating to new SQL file",
+      bullet = "info",
+      bullet_col = "blue"
+    )
+  }
+
+  invisible(sqlTemplate)
+
+}
+
+#' Generate Print-Friendly Cohort Documentation from JSON
+#' @description Converts CIRCE-based JSON cohort definitions to human-readable R Markdown files
+#'   using CirceR print-friendly formatting. Preserves category subdirectories (e.g., target/, comparator/)
+#'   in output structure.
+#' @param cohorts_dir Character. Path to cohorts folder containing json/ subdirectory.
+#'   Default: "inputs/cohorts" (Ulysses standard structure)
+#' @param output_base Character. Path to base output directory where printFriendly/ subdirectory
+#'   will be created. Default: "AI_translation" (created at repo root, separate from inputs/)
+#' @param verbose Logical. Print progress messages. Default: TRUE
+#' @return Invisibly returns character vector of generated file paths
+#' @details
+#' Input folder structure expected:
+#' ```
+#' inputs/cohorts/
+#'   └── json/
+#'       ├── target/
+#'       │   ├── cohort1.json
+#'       │   └── cohort2.json
+#'       └── comparator/
+#'           └── cohort3.json
+#' ```
+#'
+#' Output folder structure created:
+#' ```
+#' AI_translation/
+#'   └── printFriendly/
+#'       ├── target/
+#'       │   ├── cohort1 - cohort_print_friendly.Rmd
+#'       │   └── cohort2 - cohort_print_friendly.Rmd
+#'       └── comparator/
+#'           └── cohort3 - cohort_print_friendly.Rmd
+#' ```
+#'
+#' Each generated Rmd file contains a human-readable specification of the cohort definition
+#' suitable for publication or documentation. CirceR must be installed.
+#' @export
+#' @examples
+#' \dontrun{
+#'   # Generate print-friendly files with defaults
+#'   makePrintFriendlyFile()
+#'
+#'   # Custom locations
+#'   makePrintFriendlyFile(
+#'     cohorts_dir = "path/to/cohorts",
+#'     output_base = "path/to/output"
+#'   )
+#' }
+makePrintFriendlyFile <- function(cohorts_dir = "inputs/cohorts",
+                                  output_base = "AI_translation",
+                                  verbose = TRUE) {
+
+  # Set up paths
+  json_dir <- file.path(cohorts_dir, "json")
+  output_dir <- file.path(output_base, "printFriendly")
+
+  # Validate input directory
+  if (!dir.exists(json_dir)) {
+    cli::cli_abort("json_dir not found: {json_dir}")
+  }
+
+  # Check CirceR is available
+  if (!requireNamespace("CirceR", quietly = TRUE)) {
+    cli::cli_abort(
+      "Package 'CirceR' is required.",
+      "i" = "Install with: remotes::install_github('ohdsi/CirceR')"
+    )
+  }
+
+  # Find all JSON files
+  json_paths <- list.files(json_dir, pattern = "\\.json$", full.names = TRUE, recursive = TRUE)
+
+  if (length(json_paths) == 0) {
+    cli::cli_abort("No .json files found in {json_dir}")
+  }
+
+  if (verbose) {
+    cli::cli_alert_info("Found {length(json_paths)} JSON file(s) to process")
+  }
+
+  # Process each JSON file
+  output_files <- character()
+
+  for (json_path in json_paths) {
+    cohort_basename <- tools::file_path_sans_ext(basename(json_path))
+
+    # Preserve category subfolder structure (e.g., target/, comparator/)
+    rel_dir <- dirname(sub(
+      paste0("^", normalizePath(json_dir), "/?"),
+      "",
+      normalizePath(json_path)
+    ))
+
+    category_out_dir <- if (rel_dir == ".") output_dir else file.path(output_dir, rel_dir)
+
+    # Create output directory if needed
+    if (!dir.exists(category_out_dir)) {
+      dir.create(category_out_dir, recursive = TRUE)
+      if (verbose) {
+        cli::cli_alert_success("Created: {fs::path_rel(category_out_dir)}")
+      }
+    }
+
+    # Convert JSON to print-friendly Rmd
+    tryCatch(
+      {
+        json_text <- paste(readLines(json_path, warn = FALSE), collapse = "\n")
+        cohort_def <- CirceR::cohortExpressionFromJson(json_text)
+        rmd_content <- CirceR::cohortPrintFriendly(cohort_def)
+
+        # Write output file
+        out_rmd <- file.path(category_out_dir, paste0(cohort_basename, " - cohort_print_friendly.Rmd"))
+        writeLines(rmd_content, out_rmd)
+        output_files <- c(output_files, out_rmd)
+
+        if (verbose) {
+          cli::cli_alert_success("Wrote: {fs::path_rel(out_rmd)}")
+        }
+      },
+      error = function(e) {
+        cli::cli_alert_danger("Error processing {basename(json_path)}: {e$message}")
+      }
+    )
+  }
+
+  # Summary
+  if (verbose) {
+    cli::cli_alert_success("Generated {length(output_files)} print-friendly Rmd file(s)")
+    cli::cli_alert_info("Output location: {fs::path_rel(output_dir)}")
+  }
+
+  invisible(output_files)
+}
+
+
+#' @title Initialize or Restore Agent Mode for Cloned Repository
+#' @description When a Picard repository is cloned, agent mode files (.gitignored) won't be present.
+#'   This function checks if agent mode is available and restores it using metadata from existing repo files.
+#'   Agent mode provides VS Code Copilot with study context through copilot-instructions.md and reference docs.
+#'
+#' @param projectPath Character. Path to the Picard repository. Defaults to current working directory.
+#' @param verbose Logical. Display informative messages during initialization. Default: TRUE
+#'
+#' @return Invisibly returns a list with:
+#'   - `agent_mode_active`: Logical. TRUE if agent mode files are now available
+#'   - `files_created`: Character vector of files that were created/restored
+#'   - `already_existed`: Logical. TRUE if agent mode files already existed
+#'
+#' @details
+#' Agent mode setup consists of:
+#' - `.agent/` folder with reference documentation
+#' - `copilot-instructions.md` at workspace root (auto-loaded by VS Code Copilot)
+#' - `.agent/copilot-instructions.md` (backup/reference)
+#'
+#' Study metadata is extracted from existing repo files:
+#' - Study title and project name from README.md
+#' - Tool type from config.yml
+#' - Repository name from the repo folder name
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#'   # Restore agent mode in current repository
+#'   initAgentMode()
+#'
+#'   # Restore in specific repository
+#'   initAgentMode(projectPath = "/path/to/study_repo")
+#' }
+initAgentMode <- function(projectPath = here::here(), verbose = TRUE) {
+  projectPath <- fs::path_expand(projectPath)
+  repoPath <- projectPath
+
+  if (verbose) cli::cli_h2("Initializing Agent Mode Configuration")
+
+  # Check if agent mode already exists
+  agent_folder <- fs::path(repoPath, ".agent")
+  root_instructions <- fs::path(repoPath, "copilot-instructions.md")
+  reference_docs_folder <- fs::path(agent_folder, "reference-docs")
+
+  agent_mode_exists <- fs::dir_exists(agent_folder) &&
+    fs::file_exists(root_instructions) &&
+    fs::dir_exists(reference_docs_folder)
+
+  if (agent_mode_exists) {
+    if (verbose) cli::cli_alert_info("Agent mode already initialized")
+    ll <- list(
+      agent_mode_active = TRUE,
+      files_created = character(0),
+      already_existed = TRUE
+    )
+    return(ll)
+  }
+
+  if (verbose) cli::cli_inform("Agent mode not found. Restoring from package templates...")
+
+  tryCatch({
+    # Extract study metadata from repository
+    if (verbose) cli::cli_inform("Extracting study metadata from repository...")
+
+    # Get repository name from folder
+    repoName <- basename(repoPath)
+
+    # Extract from README.md
+    readme_path <- fs::path(repoPath, "README.md")
+    if (!fs::file_exists(readme_path)) {
+      cli::cli_alert_warning("README.md not found. Using defaults for study metadata.")
+      studyName <- repoName
+      projectName <- repoName
+    } else {
+      readme_content <- readr::read_file(readme_path)
+
+      # Try to extract study title from "Study Title:" field
+      study_title_match <- stringr::str_match(
+        readme_content,
+        "Study Title:\\s*([^\n]+)"
+      )
+      studyName <- if (!is.na(study_title_match[1, 2])) {
+        stringr::str_trim(study_title_match[1, 2])
+      } else {
+        repoName
+      }
+
+      # Use project name if available, otherwise use repoName
+      projectName <- repoName
+    }
+
+    # Extract toolType from config.yml
+    config_path <- fs::path(repoPath, "config.yml")
+    if (!fs::file_exists(config_path)) {
+      cli::cli_alert_warning("config.yml not found. Using 'dbms' as default toolType.")
+      toolType <- "dbms"
+    } else {
+      toolType <- tryCatch(
+        {
+          # Try to extract toolType if it exists, otherwise default to checking database blocks
+          config_content <- readr::read_file(config_path)
+          if (grepl("database:", config_content)) {
+            "dbms"
+          } else {
+            "external"
+          }
+        },
+        error = function(e) {
+          cli::cli_alert_warning("Could not parse config.yml. Using 'dbms' as default.")
+          "dbms"
+        }
+      )
+    }
+
+    databaseLabel <- "Database"
+
+    if (verbose) {
+      cli::cli_inform(c(
+        "Extracted metadata:",
+        "  Repository: {repoName}",
+        "  Study: {studyName}",
+        "  Project: {projectName}",
+        "  Tool Type: {toolType}"
+      ))
+    }
+
+    # Create .agent folder
+    fs::dir_create(agent_folder)
+
+    # Read and substitute copilot-instructions.md template
+    if (verbose) cli::cli_inform("Copying and customizing instructions template...")
+    instructions_template <- fs::path_package("picard", "agent/copilot-instructions.md") |>
+      readr::read_file()
+
+    instructions_content <- glue::glue(instructions_template, .open = "{{", .close = "}}")
+
+    # Write to .agent folder for reference
+    instructions_file <- fs::path(agent_folder, "copilot-instructions.md")
+    readr::write_file(x = instructions_content, file = instructions_file)
+    cli::cli_alert_success("Created {.file {fs::path_rel(instructions_file)}}")
+
+    # Write to workspace root so Copilot automatically picks it up
+    root_instructions_file <- fs::path(repoPath, "copilot-instructions.md")
+    readr::write_file(x = instructions_content, file = root_instructions_file)
+    cli::cli_alert_success("Created {.file {fs::path_rel(root_instructions_file)}} (workspace root)")
+
+    # Copy reference documentation files
+    if (verbose) cli::cli_inform("Copying reference documentation...")
+    fs::dir_create(reference_docs_folder)
+
+    # Get list of reference files from inst/agent
+    agent_package_folder <- fs::path_package("picard", "agent")
+
+    # List all markdown files and filter for numbered ones
+    all_files <- fs::dir_ls(agent_package_folder, type = "file", recurse = FALSE)
+    reference_files <- all_files[grepl("^\\d{2}-.*\\.md$", fs::path_file(all_files))]
+
+    # Copy each reference file
+    if (length(reference_files) > 0) {
+      purrr::walk(reference_files, function(ref_file) {
+        base_name <- fs::path_file(ref_file)
+        dest_file <- fs::path(reference_docs_folder, base_name)
+        fs::file_copy(ref_file, dest_file, overwrite = TRUE)
+      })
+      cli::cli_alert_success(
+        "Copied {length(reference_files)} reference documents to {.file {fs::path_rel(reference_docs_folder)}}"
+      )
+    } else {
+      cli::cli_alert_warning("No numbered reference documentation files found in agent package")
+    }
+
+    if (verbose) cli::cli_alert_success("Agent mode successfully initialized")
+
+    files_created <- c(
+      "copilot-instructions.md",
+      ".agent/copilot-instructions.md",
+      paste0(".agent/reference-docs/", fs::path_file(reference_files))
+    )
+
+    invisible(list(
+      agent_mode_active = TRUE,
+      files_created = files_created,
+      already_existed = FALSE
+    ))
+  }, error = function(e) {
+    cli::cli_alert_danger("Failed to initialize agent mode: {e$message}")
+    stop(e)
+  })
 }

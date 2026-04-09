@@ -1,0 +1,460 @@
+---
+title: "Loading Inputs: Cohorts and Concept Sets"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Loading Inputs: Cohorts and Concept Sets}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+> **Note:** This vignette is currently in development and subject to change.
+
+## Introduction
+
+Before running your study pipeline, you need to define the populations and phenotypes your analysis will use. Picard organizes these through two key input types:
+
+- **Cohorts:** Define study populations, comparators, and outcomes as CIRCE-based JSON definitions or custom SQL
+- **Concept Sets:** Define phenotypes for diseases, exposures, covariates, etc. as CIRCE-based JSON definitions
+
+Picard uses *manifests* to catalog, version, and track these definitions throughout your study. This vignette walks through the complete workflow for loading and managing cohorts and concept sets.
+
+## Manifest Overview
+
+A manifest is a SQLite database that catalogs and tracks definitions. For each cohort or concept set, the manifest stores:
+
+- **Metadata:** ID, label, category, source (ATLAS or manual)
+- **File information:** Path and MD5 hash for change detection
+- **Provenance:** When added, last modified, execution status
+- **Tags:** Categorization for querying and grouping
+
+Manifests enable reproducibility and change tracking as your study evolves.
+
+## Working with Cohorts
+
+The cohort workflow has four main steps:
+
+### Step 1: Create or Update Cohorts Load File (Optional)
+
+The `cohortsLoad.csv` file provides metadata for organizing and enriching your cohorts. You can create a blank template or edit it interactively:
+
+**Option A: Create a blank template**
+
+```{r eval = FALSE}
+createBlankCohortsLoadFile(cohortsFolderPath = here::here("inputs/cohorts"))
+```
+
+This creates `inputs/cohorts/cohortsLoad.csv` with columns: `atlasId`, `label`, `category`, `subCategory`, `file_name`
+
+**Option B: Use the interactive editor**
+
+```{r eval = FALSE}
+launchCohortsLoadEditor(cohortsFolderPath = here::here("inputs/cohorts"))
+```
+
+This launches a Shiny app where you can add/edit cohort metadata without touching the CSV directly.
+
+### Step 2: Import Cohort Definitions from ATLAS
+
+Connect to ATLAS and download cohort JSON definitions:
+
+```{r eval = FALSE}
+# Set up ATLAS connection (credentials from .Renviron or direct)
+atlasConn <- setAtlasConnection()
+
+# Import specific cohorts from ATLAS
+importAtlasCohorts(
+  cohortsFolderPath = here::here("inputs/cohorts"),
+  atlasConnection = atlasConn
+)
+```
+
+This downloads JSON definitions to `inputs/cohorts/json/` and updates your manifest with metadata.
+
+### Step 3: Load the Cohort Manifest
+
+Load the manifest to access all cohort definitions in your study:
+
+```{r eval = FALSE}
+cm <- loadCohortManifest()
+```
+
+### Step 4: Review and Validate Manifests
+
+Examine the cohorts that were loaded:
+
+```{r eval = FALSE}
+# View manifest list (metadata for all cohorts)
+manifest_df <- cm$getManifest()
+
+# Or get a formatted summary
+summary_df <- cm$tabulateManifest()
+
+# Query specific cohorts
+cohort_1 <- cm$getCohortById(id = 1)
+cohorts_by_tag <- cm$getCohortsByTag(tagString = "category: Primary")
+```
+
+### Step 5: Apply Functions for Cohort Operations
+
+Once manifests are loaded, you need `ExecutionSettings` to interact with the database:
+
+```{r eval = FALSE}
+# Create execution settings for a specific database
+settings <- createExecutionSettingsFromConfig(configBlock = "my_cdm")
+
+# Set execution settings on the manifest
+cm$setExecutionSettings(settings)
+
+# Now you can use database functions
+
+# Create cohort tables in the database
+cm$createCohortTables()
+
+# Generate cohort populations
+# NOTE: This step is NOT required for typical use. Cohort generation happens
+# automatically during pipeline execution (via execStudyPipeline).
+# This code is for demonstrating the capability only.
+cm$generateCohorts()
+
+# Get cohort counts (also typically done by pipeline)
+counts <- cm$retrieveCohortCounts()
+print(counts)
+```
+
+## Building Dependent Cohorts
+
+Beyond base cohorts (imported from ATLAS or written as SQL), you can define dependent cohorts that derive from other cohorts using demographic or temporal constraints. This is useful for subpopulation analyses (e.g., males only, adults over 65, patients with prior conditions).
+
+Dependent cohorts are built programmatically and stored in the manifest just like base cohorts.
+
+### Temporal Subset Cohorts
+
+Build cohorts based on temporal relationships between events. Example: "Chronic Kidney Disease (CKD) in patients with prior Type 2 Diabetes":
+
+```{r eval = FALSE}
+# Assume cm already has base cohorts loaded
+# Cohort 1 = CKD, Cohort 2 = Type 2 Diabetes
+
+ckd_given_t2d <- buildSubsetCohortTemporal(
+  label = "CKD given prior T2D",
+  baseCohortId = 1,          # CKD is the outcome
+  filterCohortId = 2,        # Must have T2D
+  temporalOperator = "before",
+  temporalStartOffset = 365, # Within 1 year before CKD
+  manifest = cm
+)
+
+# Add the dependent cohort to the manifest
+cm$addDependentCohort(ckd_given_t2d)
+```
+
+**Parameters:**
+- `baseCohortId`: The main population cohort
+- `filterCohortId`: The condition that must occur
+- `temporalOperator`: `"before"`, `"after"`, or `"overlap"` relative to base cohort
+- `temporalStartOffset`: Days before/after the operator point
+- `temporalEndOffset`: Optional, defines the end window
+
+### Demographic Subset Cohorts
+
+Build cohorts based on demographic characteristics. Example: "CKD in males only":
+
+```{r eval = FALSE}
+ckd_males <- buildSubsetCohortDemographic(
+  label = "CKD Males",
+  baseCohortId = 1,                  # CKD population
+  genderConceptIds = c(8507),        # 8507 = Male
+  manifest = cm
+)
+
+cm$addDependentCohort(ckd_males)
+```
+
+**Parameters:**
+- `baseCohor tId`: The main population cohort
+- `genderConceptIds`: Standard concept IDs for gender (e.g., 8507 for Male, 8532 for Female)
+- `minAge`: Minimum age (optional)
+- `maxAge`: Maximum age (optional)
+
+Example: "CKD in adults (18+) only":
+
+```{r eval = FALSE}
+ckd_adults <- buildSubsetCohortDemographic(
+  label = "CKD Adults",
+  baseCohortId = 1,
+  minAge = 18,
+  manifest = cm
+)
+
+cm$addDependentCohort(ckd_adults)
+```
+
+### Union and Complement Cohorts
+
+Combine multiple cohorts or create exclusions:
+
+**Union:** Patients in either CKD OR Diabetes:
+
+```{r eval = FALSE}
+ckd_or_t2d <- buildUnionCohort(
+  label = "CKD or Type 2 Diabetes",
+  cohortIds = c(1, 2),    # Union of cohorts 1 and 2
+  manifest = cm
+)
+
+cm$addDependentCohort(ckd_or_t2d)
+```
+
+**Complement:** All patients NOT in a cohort:
+
+```{r eval = FALSE}
+no_ckd <- buildComplementCohort(
+  label = "No Chronic Kidney Disease",
+  cohortId = 1,           # Exclude cohort 1
+  manifest = cm
+)
+
+cm$addDependentCohort(no_ckd)
+```
+
+### Visualizing Dependencies
+
+Once you've defined dependent cohorts, visualize the relationship graph:
+
+```{r eval = FALSE}
+# Generate a dependency report (Mermaid diagram + table)
+report <- visualizeCohortDependencies(cm)
+
+# Optionally save to file
+visualizeCohortDependencies(cm, outputPath = here::here("inputs/cohorts"))
+# Creates: inputs/cohorts/cohort_dependencies.md
+```
+
+The report shows:
+- Dependency structure (which cohorts depend on which)
+- Mermaid diagram for visualization
+- Table of all cohorts with their types
+
+### Complete Dependent Cohort Workflow
+
+Here's a full example combining base and dependent cohorts:
+
+```{r eval = FALSE}
+# 1. Load base cohorts from ATLAS
+cm <- loadCohortManifest()
+
+# 2. Create dependent cohorts
+ckd_given_t2d <- buildSubsetCohortTemporal(
+  label = "CKD given prior T2D",
+  baseCohortId = 1,
+  filterCohortId = 2,
+  temporalOperator = "before",
+  temporalStartOffset = 365,
+  manifest = cm
+)
+cm$addDependentCohort(ckd_given_t2d)
+
+ckd_males <- buildSubsetCohortDemographic(
+  label = "CKD Males",
+  baseCohortId = 1,
+  genderConceptIds = c(8507),
+  manifest = cm
+)
+cm$addDependentCohort(ckd_males)
+
+ckd_adults <- buildSubsetCohortDemographic(
+  label = "CKD Adults",
+  baseCohortId = 1,
+  minAge = 18,
+  manifest = cm
+)
+cm$addDependentCohort(ckd_adults)
+
+# 3. Visualize dependencies
+report <- visualizeCohortDependencies(cm)
+
+# 4. Generate all cohorts (base + dependent)
+settings <- createExecutionSettingsFromConfig(configBlock = "optum_dod")
+cm$setExecutionSettings(settings)
+cm$createCohortTables()
+results <- cm$generateCohorts()
+counts <- cm$retrieveCohortCounts()
+print(counts)
+```
+
+**Note:** Dependent cohorts are generated using R code, not SQL files. When you call `cm$generateCohorts()`, Picard executes the logic for all dependent cohorts automatically.
+
+
+
+The concept set workflow is similar to cohorts:
+
+### Step 1: Create or Update Concept Sets Load File (Optional)
+
+Create metadata for organizing your concept sets:
+
+**Option A: Create a blank template**
+
+```{r eval = FALSE}
+createBlankConceptSetsLoadFile(conceptSetsFolderPath = here::here("inputs/conceptSets"))
+```
+
+This creates `inputs/conceptSets/conceptSetsLoad.csv` with columns: `atlasId`, `label`, `category`, `subCategory`, `domain`, `sourceCode`, `file_name`
+
+**Option B: Use the interactive editor**
+
+```{r eval = FALSE}
+launchConceptSetsLoadEditor(conceptSetsFolderPath = here::here("inputs/conceptSets"))
+```
+
+### Step 2: Import Concept Set Definitions from ATLAS
+
+Download concept set JSON definitions:
+
+```{r eval = FALSE}
+# Reuse or create ATLAS connection
+atlasConn <- setAtlasConnection()
+
+# Import concept sets from ATLAS
+importAtlasConceptSets(
+  conceptSetsFolderPath = here::here("inputs/conceptSets"),
+  atlasConnection = atlasConn
+)
+```
+
+This downloads JSON definitions to `inputs/conceptSets/json/` and updates metadata.
+
+### Step 3: Load the Concept Set Manifest
+
+```{r eval = FALSE}
+# Load without execution settings (for review only)
+csm <- loadConceptSetManifest()
+```
+
+### Step 4: Review and Validate Manifests
+
+Examine concept sets in your study:
+
+```{r eval = FALSE}
+# View all concept sets
+manifest_df <- csm$getManifest()
+
+# Get formatted summary
+summary_df <- csm$tabulateManifest()
+
+# Query by criteria
+concept_set <- csm$getConceptSetById(id = 1)
+drug_expo <- csm$getConceptSetsByTag(tagString = "domain: drug_exposure")
+```
+
+### Step 5: Apply Functions for Concept Set Operations
+
+To extract source codes or access vocabularies, you need `ExecutionSettings`:
+
+**Extract source codes** retrieves codes in specific vocabularies (e.g., NDC, RxNorm) for drug concepts:
+
+```{r eval = FALSE}
+# Create execution settings
+settings <- createExecutionSettingsFromConfig(configBlock = "optum_dod")
+
+# Set execution settings on the manifest
+csm$setExecutionSettings(settings)
+
+# Extract source codes for a concept set
+# (e.g., NDC codes for drug concepts)
+source_codes <- csm$extractSourceCodes(
+  sourceVocabs = c("NDC", "RxNorm")
+)
+```
+
+**Extract included codes** builds a complete list of all standard concepts included in each concept set definition and exports to Excel:
+
+```{r eval = FALSE}
+# Extract all included standard concepts from all concept sets
+# Generates IncludedCodes.xlsx with one sheet per concept set
+# Each sheet contains: concept_id, concept_name, vocabulary_id
+csm$extractIncludedCodes(
+  outputFolder = here::here("inputs/conceptSets")
+)
+```
+
+## Complete Workflow Example
+
+Here's a complete testing script combining cohorts and concept sets:
+
+```{r eval = FALSE}
+library(picard)
+
+# === COHORTS WORKFLOW ===
+
+# 1. Create ATLAS connection (credentials from .Renviron)
+atlasConn <- setAtlasConnection()
+
+# 2. Create load file or use editor
+# Option A: Create blank template
+createBlankCohortsLoadFile(here::here("inputs/cohorts"))
+
+# Option B: Use interactive editor
+# launchCohortsLoadEditor(here::here("inputs/cohorts"))
+
+# 3. Import from ATLAS
+importAtlasCohorts(
+  cohortsFolderPath = here::here("inputs/cohorts"),
+  atlasConnection = atlasConn
+)
+
+# 4. Load manifest and review
+cm <- loadCohortManifest()
+cm$getManifest()
+
+# 5. Set up database and generate cohorts
+settings <- createExecutionSettingsFromConfig(configBlock = "optum_dod")
+cm$setExecutionSettings(settings)
+cm$createCohortTables()
+cm$generateCohorts()
+counts <- cm$retrieveCohortCounts()
+print(counts)
+
+# === CONCEPT SETS WORKFLOW ===
+
+# 1. Create load file
+# Option A: Create blank template
+createBlankConceptSetsLoadFile(here::here("inputs/conceptSets"))
+
+# Option B: Use interactive editor
+# launchConceptSetsLoadEditor(here::here("inputs/conceptSets"))
+
+# 2. Import from ATLAS
+importAtlasConceptSets(
+  conceptSetsFolderPath = here::here("inputs/conceptSets"),
+  atlasConnection = atlasConn
+)
+
+# 3. Load manifest and review
+csm <- loadConceptSetManifest(executionSettings = settings)
+csm$getManifest()
+
+# 4. Extract source codes (if needed)
+# csm$extractSourceCodes(sourceVocabs = c("NDC"))
+```
+
+## Key Points
+
+**Manifests as audit trail:** The manifest (SQLite database + load CSV) tracks exactly which definitions were used in each version of the study. Hash values detect if definitions change.
+
+**Load files for metadata:** The `cohortsLoad.csv` and `conceptSetsLoad.csv` files organize and enrich definitions with human-readable metadata.
+
+**ExecutionSettings enable database operations:** Without ExecutionSettings, you can load and review manifests. With ExecutionSettings, you can generate cohorts and extract source codes.
+
+## Next Steps
+
+Now that you have cohorts and concept sets loaded:
+
+1. **Review the definitions:** Ensure your manifests contain all needed populations and phenotypes
+2. **Run the pipeline:** See [Running the Pipeline](running_the_pipeline.html) to execute your first analysis
+3. **Track changes:** Each manifest update via import or editor gets tracked with timestamps and hashes
+
+## See Also
+
+- [The Ulysses Standard Repository Structure](picard_repository_structure.html) - Where inputs fit in the project
+- [Launching a Study](launching_a_study.html) - Initial setup
+- [Running the Pipeline](running_the_pipeline.html) - Using cohorts in tasks

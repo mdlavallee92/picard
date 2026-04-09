@@ -1,48 +1,48 @@
-.navbar {{
-  background-color: {backgroundColor};
-  color: {foregroundColor};
-}}
+.navbar {
+  background-color: ${backgroundColor};
+  color: ${foregroundColor};
+}
 
-.navbar .nav-link {{
-  color: {foregroundColor};
-}}
+.navbar .nav-link {
+  color: ${foregroundColor};
+}
 
-.nav-tabs .nav-item .nav-link {{
-  color: {foregroundColor};
-}}
+.nav-tabs .nav-item .nav-link {
+  color: ${foregroundColor};
+}
 
-.nav-tabs .nav-item .nav-link.active {{
-  background-color: {backgroundColor};
-  color: {foregroundColor};
-}}
+.nav-tabs .nav-item .nav-link.active {
+  background-color: ${backgroundColor};
+  color: ${foregroundColor};
+}
 
-.tab-content .tab-pane {{
+.tab-content .tab-pane {
   background-color: #FFF;
   min-height: 300px;
   height: auto;
-}}
+}
 
-.title {{
-  color: {backgroundColor};
-}}
+.title {
+  color: ${backgroundColor};
+}
 
-h1 {{
-  color: {backgroundColor};
-}}
+h1 {
+  color: ${backgroundColor};
+}
 
 
-h2 {{
-  color: {backgroundColor};
-}}
+h2 {
+  color: ${backgroundColor};
+}
 
-h3 {{
-  color: {backgroundColor};
-}}
+h3 {
+  color: ${backgroundColor};
+}
 
-h4 {{
-  color: {backgroundColor};
-}}
+h4 {
+  color: ${backgroundColor};
+}
 
-body {{
-  color: {backgroundColor};
-}}
+body {
+  color: ${backgroundColor};
+}

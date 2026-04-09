@@ -171,24 +171,43 @@ validateConfigYaml <- function(configFilePath = NULL) {
   
   # Parse YAML
   configList <- tryCatch({
-    yaml::read_yaml(configFilePath)
+    yaml::read_yaml(configFilePath, eval.expr =FALSE)
   }, error = function(e) {
     cli::cli_alert_danger("Failed to parse YAML: {e$message}")
     stop("config.yml is not valid YAML")
   })
   
-  # Check for top-level required fields
+  # Check for top-level required fields (or in default block if not at top level)
   topLevelRequired <- c("version", "projectName")
-  missingTopLevel <- setdiff(topLevelRequired, names(configList))
+  
+  # Try to get version and projectName - check top level first, then default block
+  version <- configList$version
+  projectName <- configList$projectName
+  
+  if (is.null(version) && !is.null(configList$default)) {
+    version <- configList$default$version
+  }
+  
+  if (is.null(projectName) && !is.null(configList$default)) {
+    projectName <- configList$default$projectName
+  }
+  
+  missingTopLevel <- character()
+  if (is.null(version)) {
+    missingTopLevel <- c(missingTopLevel, "version")
+  }
+  if (is.null(projectName)) {
+    missingTopLevel <- c(missingTopLevel, "projectName")
+  }
   
   if (length(missingTopLevel) > 0) {
-    cli::cli_alert_danger("Missing top-level fields in config.yml:")
+    cli::cli_alert_danger("Missing required fields in config.yml:")
     cli::cli_bullets(setNames(missingTopLevel, "x"))
-    stop("config.yml is missing required top-level fields")
+    cli::cli_bullets(c(i = "These can be at the top level or in the 'default' block"))
+    stop("config.yml is missing required fields")
   }
   
   # Validate version format (MAJOR.MINOR.PATCH)
-  version <- configList$version
   if (!grepl("^\\d+\\.\\d+\\.\\d+$", as.character(version))) {
     cli::cli_alert_danger("Invalid version format: {version}")
     cli::cli_bullets(c(i = "Use semantic versioning format: MAJOR.MINOR.PATCH (e.g., 1.0.0)"))
@@ -196,7 +215,7 @@ validateConfigYaml <- function(configFilePath = NULL) {
   }
   
   # Check that projectName is a string
-  if (!is.character(configList$projectName)) {
+  if (!is.character(projectName)) {
     cli::cli_alert_danger("projectName must be a character string")
     stop("Invalid projectName type")
   }
@@ -219,8 +238,9 @@ validateConfigYaml <- function(configFilePath = NULL) {
   credMatches <- gregexpr(credentialPattern, rawContent, perl = TRUE)
   
   if (length(unlist(credMatches)) > 0) {
-    # Extract matched lines
+    # Extract matched lines and flatten to character vector
     credentialLines <- regmatches(rawContent, credMatches)
+    credentialLines <- unlist(credentialLines)  # Flatten list to vector
     
     for (line in credentialLines) {
       if (!grepl("!expr", line, fixed = TRUE)) {

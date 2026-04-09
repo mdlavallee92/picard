@@ -134,17 +134,53 @@ validateEnvironment <- function() {
   tryCatch({
     cli::cli_alert_info("Validating environment state...")
 
-    # Get status of packages
-    status <- renv::status()
+    # Capture output to detect unknown source packages
+    statusOutput <- utils::capture.output({
+      status <- renv::status()
+    })
+    
+    unknownSourceText <- paste(statusOutput, collapse = "\n")
+    hasUnknownSources <- grepl("unknown source", unknownSourceText, ignore.case = TRUE)
 
     if (!is.null(status)) {
       # There are packages that don't match lockfile
-      cli::cli_abort(c(
-        "Environment drift detected!",
-        "i" = "Packages differ from renv.lock",
-        "i" = "Restore with: {.code renv::restore()}",
-        "i" = "Or update with: {.code snapshotEnvironment()}"
-      ))
+      
+      if (hasUnknownSources) {
+        # Extract package names from status
+        packageNames <- if (is.data.frame(status) && "Package" %in% names(status)) {
+          status$Package
+        } else {
+          c()
+        }
+        
+        if (length(packageNames) > 0) {
+          cli::cli_alert_warning("Found {length(packageNames)} package(s) from unknown source:")
+          for (pkg in packageNames) {
+            cli::cli_bullets(c("!" = "{pkg}"))
+          }
+          cli::cli_bullets(c(
+            "i" = "Unknown source packages are permitted in this environment",
+            "i" = "Pipeline will proceed with execution"
+          ))
+          # Continue despite unknown sources - this is not a blocker
+        } else {
+          # Actual drift detected (not just unknown sources)
+          cli::cli_abort(c(
+            "Environment drift detected!",
+            "i" = "Packages differ from renv.lock",
+            "i" = "Restore with: {.code renv::restore()}",
+            "i" = "Or update with: {.code snapshotEnvironment()}"
+          ))
+        }
+      } else {
+        # Actual drift detected (not unknown sources)
+        cli::cli_abort(c(
+          "Environment drift detected!",
+          "i" = "Packages differ from renv.lock",
+          "i" = "Restore with: {.code renv::restore()}",
+          "i" = "Or update with: {.code snapshotEnvironment()}"
+        ))
+      }
     }
 
     cli::cli_alert_success("✓ Environment validated against renv.lock")
