@@ -138,5 +138,33 @@ reference:
       - visualizeCohortDependencies
       - zipAndArchive
 
+articles:
+  - title: "Getting Started"
+    desc: "Foundation and setup guides for Picard studies"
+    contents:
+      - picard_repository_structure
+      - launching_a_study
+
+  - title: "Study Design and Planning"
+    desc: "Planning and designing your evidence generation study"
+    contents:
+      - evidence_generation_plan
+
+  - title: "Oohorts and Concept Sets"
+    desc: "Loading and preparing cohorts and concept sets"
+    contents:
+      - loading_inputs
+
+  - title: "Pipeline Development and Execution"
+    desc: "Building, testing, and running analysis tasks"
+    contents:
+      - developing_the_pipeline
+      - running_the_pipeline
+
+  - title: "Results Processing"
+    desc: "Post-processing, validation, and dissemination of results"
+    contents:
+      - post_processing
+
 development:
   mode: "auto"
