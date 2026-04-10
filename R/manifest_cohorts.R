@@ -2,8 +2,11 @@
 #'
 #' Loads a CohortManifest R6 object by either reading from an existing
 #' cohortManifest.sqlite database or by scanning the inputs/cohorts directories.
-#' ExecutionSettings are optional and only required if you plan to generate cohorts
-#' or retrieve cohort counts. You can load the manifest without them to review metadata.
+#' When a manifest database exists, automatically discovers any new cohort files
+#' that have been added to the directories since the manifest was created, allowing
+#' for incremental cohort development. ExecutionSettings are optional and only 
+#' required if you plan to generate cohorts or retrieve cohort counts. You can load 
+#' the manifest without them to review metadata.
 #'
 #' @param cohortsFolderPath Character. Path to the cohorts folder containing the manifest
 #'   database and cohort definition files. Defaults to "inputs/cohorts". The function
@@ -21,8 +24,10 @@
 #' @details
 #' **If database exists:**
 #' Loads cohort paths and metadata from the cohortManifest.sqlite database,
-#' verifies files still exist, and checks if any files have changed by comparing
-#' the stored hash with the current file hash.
+#' verifies files still exist, checks if any files have changed by comparing
+#' the stored hash with the current file hash, and then scans the directories
+#' for any NEW cohort files that have been added since the manifest was created.
+#' These new files are automatically discovered and added to the manifest.
 #'
 #' **If database doesn't exist:**
 #' Scans `cohortsFolderPath/json` and `cohortsFolderPath/sql` directories to find cohort
@@ -145,7 +150,47 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
           if (verbose) {
             cli::cli_alert_success("Loaded {length(cohort_entries)} cohorts from manifest")
           }
-          # Successfully loaded from manifest, proceed to create and return
+          # Successfully loaded from manifest, now check for new files in directories
+          
+          # Scan directories for all files to find any new cohorts not in database
+          json_dir <- fs::path(cohortsFolderPath, "json")
+          sql_dir <- fs::path(cohortsFolderPath, "sql")
+          
+          all_files <- c()
+          if (dir.exists(json_dir)) {
+            all_files <- c(all_files, list.files(json_dir, pattern = "\\.json$", full.names = TRUE, recursive = TRUE))
+          }
+          if (dir.exists(sql_dir)) {
+            all_files <- c(all_files, list.files(sql_dir, pattern = "\\.sql$", full.names = TRUE, recursive = TRUE))
+          }
+          
+          # Find which files are NOT in the database
+          existing_file_paths <- existing_cohorts$filePath
+          new_files <- setdiff(all_files, existing_file_paths)
+          
+          # For each new file, create CohortDef and add to manifest
+          if (length(new_files) > 0) {
+            if (verbose) {
+              cli::cli_alert_info("Found {length(new_files)} new cohort file(s) not in manifest")
+            }
+            
+            for (file_path in new_files) {
+              label <- tools::file_path_sans_ext(basename(file_path))
+              tryCatch({
+                new_cohort_entry <- CohortDef$new(
+                  label = label,
+                  tags = list(),
+                  filePath = file_path
+                )
+                cohort_entries[[length(cohort_entries) + 1]] <- new_cohort_entry
+                if (verbose) {
+                  cli::cli_alert_success("Added new cohort from file: {label}")
+                }
+              }, error = function(e) {
+                cli::cli_alert_warning("Error adding new cohort {label}: {e$message}")
+              })
+            }
+          }
         } else {
           # Database had entries but none could be loaded, fall through to scan directories
           if (verbose) {
@@ -797,7 +842,7 @@ parseTagsString <- function(tags_str) {
 #'   manifest <- loadCohortManifest()
 #' }
 #'
-importAtlasCohorts <- function(cohortsFolderPath,
+importAtlasCohorts <- function(cohortsFolderPath = here::here("inputs/cohorts"),
                                atlasConnection) {
   cohortLoadPath <- fs::path(cohortsFolderPath, "cohortsLoad.csv")                              
   # Read cohort manifest CSV file

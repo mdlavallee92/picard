@@ -176,7 +176,7 @@ UlyssesStudy <- R6::R6Class(
         
         usethis::use_git_ignore(
           c(".Rproj.user", ".Ruserdata", ".Rhistory", ".RData",
-            ".Renviron", "errorReportSql.txt", ".agent/", "copilot-instructions.md")
+            ".Renviron", "errorReportSql.txt", ".agent/", "copilot-instructions.md", "exec/logs/")
         )
       }, error = function(e) {
         cli::cli_alert_danger("Failed to initialize R project: {e$message}")

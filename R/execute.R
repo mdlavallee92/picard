@@ -400,7 +400,7 @@ execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
   if (!file.exists(fullTaskFilePath)) {
     cli::cli_alert_danger("Task file not found: {fs::path_rel(fullTaskFilePath)}")
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
-                        "Task file does not exist")
+                        errorMessage = "Task file does not exist")
     stop("Task file does not exist")
   }
 
@@ -411,7 +411,7 @@ execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
       executionSettings <- createExecutionSettingsFromConfig(configBlock = configBlock)
     }, error = function(e) {
       cli::cli_alert_warning("Could not create execution settings for task status check: {e$message}")
-      executionSettings <<- NULL
+      executionSettings <- NULL
     })
     
     if (!is.null(executionSettings)) {
@@ -436,18 +436,20 @@ execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
   }, error = function(e) {
     cli::cli_alert_danger("Task validation failed: {e$message}")
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
-                        paste("Validation failed:", e$message))
+                        errorMessage = paste("Validation failed:", e$message))
     stop("Invalid task structure - cannot execute")
   })
 
   # Read and process the task file
   tryCatch({
     rLines <- readr::read_file(fullTaskFilePath) |>
+      stringr::str_replace_all("\r\n", "\n") |>  # Convert CRLF to LF
+      stringr::str_replace_all("\r", "\n") |>     # Convert any remaining CR to LF
       glue::glue(.open = "!||", .close = "||!")
   }, error = function(e) {
     cli::cli_alert_danger("Failed to read task file: {e$message}")
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
-                        paste("Read error:", e$message))
+                        errorMessage = paste("Read error:", e$message))
     stop("Error reading task file")
   })
 
@@ -457,7 +459,7 @@ execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
   }, error = function(e) {
     cli::cli_alert_danger("Failed to parse task file: {e$message}")
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
-                        paste("Parse error:", e$message))
+                        errorMessage = paste("Parse error:", e$message))
     stop("Error parsing task expressions")
   })
 
@@ -481,7 +483,7 @@ execute_task <- function(taskFile, configBlock, pipelineVersion = "dev",
   # Record success or failure
   if (!is.null(executionError)) {
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "failed",
-                        executionError)
+                        errorMessage = executionError)
     stop(executionError)
   } else {
     recordTaskExecution(taskFile, configBlock, pipelineVersion, "success")

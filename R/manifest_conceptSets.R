@@ -759,7 +759,7 @@ launchConceptSetsLoadEditor <- function(conceptSetsFolderPath = here::here("inpu
 #'   )
 #' }
 #'
-importAtlasConceptSets <- function(conceptSetsFolderPath,
+importAtlasConceptSets <- function(conceptSetsFolderPath = here::here("inputs/conceptSets"),
                                     atlasConnection) {
   conceptSetLoadPath <- fs::path(conceptSetsFolderPath, "conceptSetsLoad.csv")
 
