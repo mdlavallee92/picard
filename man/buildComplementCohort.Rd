@@ -10,7 +10,7 @@ buildComplementCohort(
   excludeCohortIds,
   complementType = "exclude_any",
   cohortsFolder = here::here("inputs/cohorts"),
-  manifest = NULL
+  manifest
 )
 }
 \arguments{
@@ -26,8 +26,8 @@ buildComplementCohort(
 \item 'exclude_all': remove subjects only if in ALL exclude cohorts
 }}
 
-\item{manifest}{CohortManifest object (optional). If provided, validates that population and exclude cohorts exist.
-Recommended to ensure referential integrity. If NULL, a warning is issued.}
+\item{manifest}{CohortManifest object. Required. Validates that population and exclude cohorts exist and
+automatically registers the new cohort via addDependentCohort().}
 
 \item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }

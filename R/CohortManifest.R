@@ -775,85 +775,25 @@ CohortManifest <- R6::R6Class(
       private$.executionSettings <- executionSettings
     },
 
-    #' Get a specific cohort by ID
+    #' Query cohorts by IDs
     #'
-    #' @param id Integer. The cohort ID.
-    #'
-    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for the requested cohort.
-    getCohortById = function(id) {
-      checkmate::assert_int(x = id)
-
-      cohort_obj <- NULL
-      for (cohort in private$.manifest) {
-        if (cohort$getId() == id) {
-          cohort_obj <- cohort
-          break
-        }
-      }
-
-      if (is.null(cohort_obj)) {
-        stop("Cohort with ID ", id, " not found")
-      }
-
-      # Get timestamp from database
-      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
-      on.exit(DBI::dbDisconnect(conn))
-
-      timestamp_record <- DBI::dbGetQuery(
-        conn,
-        "SELECT timestamp FROM cohort_manifest WHERE id = ?",
-        list(id)
-      )
-
-      timestamp <- if (nrow(timestamp_record) > 0) {
-        timestamp_record$timestamp[1]
-      } else {
-        NA_character_
-      }
-
-      # Return as data frame
-      data.frame(
-        id = cohort_obj$getId(),
-        label = cohort_obj$label,
-        tags = cohort_obj$formatTagsAsString(),
-        filePath = cohort_obj$getFilePath(),
-        hash = cohort_obj$getHash(),
-        timestamp = timestamp,
-        stringsAsFactors = FALSE
-      )
-    },
-
-    #' Get cohorts by tag
-    #'
-    #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
+    #' @param ids Integer vector. One or more cohort IDs.
     #'
     #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching cohorts, or NULL if none found.
-    getCohortsByTag = function(tagString) {
-      checkmate::assert_string(x = tagString, min.chars = 1)
-
-      # Parse the tag string to extract name and value
-      tag_parts <- strsplit(tagString, ":\\s*")[[1]]
-      if (length(tag_parts) != 2) {
-        stop("Tag must be in the format 'name: value'")
-      }
-
-      tag_name <- trimws(tag_parts[1])
-      tag_value <- trimws(tag_parts[2])
+    queryCohortsByIds = function(ids) {
+      checkmate::assert_integerish(x = ids, min.len = 1)
+      ids <- as.integer(ids)
 
       matching_cohorts <- list()
 
-      # Search through manifest for matching tags
       for (cohort in private$.manifest) {
-        cohort_tags <- cohort$tags
-        if (!is.null(cohort_tags) && tag_name %in% names(cohort_tags)) {
-          if (cohort_tags[[tag_name]] == tag_value) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
-          }
+        if (cohort$getId() %in% ids) {
+          matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
         }
       }
 
       if (length(matching_cohorts) == 0) {
-        cli::cli_alert_warning("No cohorts found with tag '{tag_name}: {tag_value}'")
+        cli::cli_alert_warning("No cohorts found with IDs: {paste(ids, collapse = ', ')}")
         return(NULL)
       }
 
@@ -899,37 +839,128 @@ CohortManifest <- R6::R6Class(
       return(manifest_df)
     },
 
-    #' Get cohorts by label
+    #' Query cohorts by tag
     #'
-    #' @param label Character. The label to search for.
-    #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
-    #'   Defaults to "exact".
+    #' @param tagStrings Character vector. One or more tags in the format "name: value"
+    #'   (e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+    #'   argument controls whether a cohort must satisfy any or all of them.
+    #' @param match Character. "any" (default) returns cohorts matching at least one tag;
+    #'   "all" returns only cohorts matching every tag.
     #'
     #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching cohorts, or NULL if none found.
-    getCohortsByLabel = function(label, matchType = c("exact", "pattern")) {
-      checkmate::assert_string(x = label, min.chars = 1)
-      matchType <- match.arg(matchType)
+    queryCohortsByTag = function(tagStrings, match = c("any", "all")) {
+      checkmate::assert_character(x = tagStrings, min.len = 1, min.chars = 1)
+      match <- match.arg(match)
+
+      # Parse each tag string into name/value pairs
+      parsed_tags <- lapply(tagStrings, function(ts) {
+        tag_parts <- strsplit(ts, ":\\s*")[[1]]
+        if (length(tag_parts) != 2) {
+          cli::cli_abort("Tag must be in the format 'name: value': {ts}")
+        }
+        list(name = trimws(tag_parts[1]), value = trimws(tag_parts[2]))
+      })
 
       matching_cohorts <- list()
 
-      # Search through manifest for matching labels
+      # Search through manifest for matching tags
       for (cohort in private$.manifest) {
-        cohort_label <- cohort$label
-        
-        if (matchType == "exact") {
-          if (cohort_label == label) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
-          }
-        } else if (matchType == "pattern") {
-          # Use grepl for pattern matching (case-insensitive)
-          if (grepl(label, cohort_label, ignore.case = TRUE)) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
-          }
+        cohort_tags <- cohort$tags
+        tag_hits <- sapply(parsed_tags, function(pt) {
+          !is.null(cohort_tags) &&
+            pt$name %in% names(cohort_tags) &&
+            cohort_tags[[pt$name]] == pt$value
+        })
+
+        include <- if (match == "any") any(tag_hits) else all(tag_hits)
+
+        if (include) {
+          matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
         }
       }
 
       if (length(matching_cohorts) == 0) {
-        cli::cli_alert_warning("No cohorts found with {matchType} label match '{label}'")
+        match_desc <- paste(tagStrings, collapse = " | ")
+        cli::cli_alert_warning("No cohorts found matching ({match}): {match_desc}")
+        return(NULL)
+      }
+
+      # Convert matching cohorts to data frame
+      manifest_df <- data.frame(
+        id = integer(),
+        label = character(),
+        tags = character(),
+        filePath = character(),
+        hash = character(),
+        timestamp = character(),
+        stringsAsFactors = FALSE
+      )
+
+      for (cohort in matching_cohorts) {
+        manifest_df <- rbind(manifest_df, data.frame(
+          id = cohort$getId(),
+          label = cohort$label,
+          tags = cohort$formatTagsAsString(),
+          filePath = cohort$getFilePath(),
+          hash = cohort$getHash(),
+          timestamp = NA_character_,
+          stringsAsFactors = FALSE
+        ))
+      }
+
+      # Get timestamps from database
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+
+      for (i in seq_len(nrow(manifest_df))) {
+        cohort_id <- manifest_df$id[i]
+        timestamp_record <- DBI::dbGetQuery(
+          conn,
+          "SELECT timestamp FROM cohort_manifest WHERE id = ?",
+          list(cohort_id)
+        )
+        if (nrow(timestamp_record) > 0) {
+          manifest_df$timestamp[i] <- timestamp_record$timestamp[1]
+        }
+      }
+
+      return(manifest_df)
+    },
+
+    #' Query cohorts by label
+    #'
+    #' @param labels Character vector. One or more labels to search for.
+    #'   A cohort is included when it matches at least one of the supplied labels (OR logic).
+    #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
+    #'   Defaults to "exact".
+    #'
+    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching cohorts, or NULL if none found.
+    queryCohortsByLabel = function(labels, matchType = c("exact", "pattern")) {
+      checkmate::assert_character(x = labels, min.len = 1, min.chars = 1)
+      matchType <- match.arg(matchType)
+
+      matching_cohorts <- list()
+
+      # Search through manifest for matching labels (any-match across supplied labels)
+      for (cohort in private$.manifest) {
+        cohort_label <- cohort$label
+
+        label_hits <- sapply(labels, function(lbl) {
+          if (matchType == "exact") {
+            cohort_label == lbl
+          } else {
+            grepl(lbl, cohort_label, ignore.case = TRUE)
+          }
+        })
+
+        if (any(label_hits)) {
+          matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
+        }
+      }
+
+      if (length(matching_cohorts) == 0) {
+        match_desc <- paste(labels, collapse = " | ")
+        cli::cli_alert_warning("No cohorts found with {matchType} label match: {match_desc}")
         return(NULL)
       }
 
@@ -982,12 +1013,12 @@ CohortManifest <- R6::R6Class(
       length(private$.manifest)
     },
 
-    #' Grab a specific cohort by ID
+    #' Get a specific cohort by ID
     #'
     #' @param id Integer. The cohort ID.
     #'
     #' @return CohortDef. The CohortDef object with matching ID, or NULL if not found.
-    grabCohortById = function(id) {
+    getCohortById = function(id) {
       checkmate::assert_int(x = id)
 
       for (cohort in private$.manifest) {
@@ -1000,74 +1031,89 @@ CohortManifest <- R6::R6Class(
       return(NULL)
     },
 
-    #' Grab cohorts by tag
+    #' Get cohorts by tag
     #'
-    #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
+    #' @param tagStrings Character vector. One or more tags in the format "name: value"
+    #'   (e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+    #'   argument controls whether a cohort must satisfy any or all of them.
+    #' @param match Character. "any" (default) returns cohorts matching at least one tag;
+    #'   "all" returns only cohorts matching every tag.
     #'
     #' @return List. A list of CohortDef objects with matching tags, or NULL if none found.
-    grabCohortsByTag = function(tagString) {
-      checkmate::assert_string(x = tagString, min.chars = 1)
+    getCohortsByTag = function(tagStrings, match = c("any", "all")) {
+      checkmate::assert_character(x = tagStrings, min.len = 1, min.chars = 1)
+      match <- match.arg(match)
 
-      # Parse the tag string to extract name and value
-      tag_parts <- strsplit(tagString, ":\\s*")[[1]]
-      if (length(tag_parts) != 2) {
-        stop("Tag must be in the format 'name: value'")
-      }
-
-      tag_name <- trimws(tag_parts[1])
-      tag_value <- trimws(tag_parts[2])
+      # Parse each tag string into name/value pairs
+      parsed_tags <- lapply(tagStrings, function(ts) {
+        tag_parts <- strsplit(ts, ":\\s*")[[1]]
+        if (length(tag_parts) != 2) {
+          cli::cli_abort("Tag must be in the format 'name: value': {ts}")
+        }
+        list(name = trimws(tag_parts[1]), value = trimws(tag_parts[2]))
+      })
 
       matching_cohorts <- list()
 
       # Search through manifest for matching tags
       for (cohort in private$.manifest) {
         cohort_tags <- cohort$tags
-        if (!is.null(cohort_tags) && tag_name %in% names(cohort_tags)) {
-          if (cohort_tags[[tag_name]] == tag_value) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
-          }
+        tag_hits <- sapply(parsed_tags, function(pt) {
+          !is.null(cohort_tags) &&
+            pt$name %in% names(cohort_tags) &&
+            cohort_tags[[pt$name]] == pt$value
+        })
+
+        include <- if (match == "any") any(tag_hits) else all(tag_hits)
+
+        if (include) {
+          matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
         }
       }
 
       if (length(matching_cohorts) == 0) {
-        cli::cli_alert_warning("No cohorts found with tag '{tag_name}: {tag_value}'")
+        match_desc <- paste(tagStrings, collapse = " | ")
+        cli::cli_alert_warning("No cohorts found matching ({match}): {match_desc}")
         return(NULL)
       }
 
       return(matching_cohorts)
     },
 
-    #' Grab cohorts by label
+    #' Get cohorts by label
     #'
-    #' @param label Character. The label to search for.
+    #' @param labels Character vector. One or more labels to search for.
+    #'   A cohort is included when it matches at least one of the supplied labels (OR logic).
     #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
     #'   Defaults to "exact".
     #'
     #' @return List. A list of CohortDef objects with matching labels, or NULL if none found.
-    grabCohortsByLabel = function(label, matchType = c("exact", "pattern")) {
-      checkmate::assert_string(x = label, min.chars = 1)
+    getCohortsByLabel = function(labels, matchType = c("exact", "pattern")) {
+      checkmate::assert_character(x = labels, min.len = 1, min.chars = 1)
       matchType <- match.arg(matchType)
 
       matching_cohorts <- list()
 
-      # Search through manifest for matching labels
+      # Search through manifest for matching labels (any-match across supplied labels)
       for (cohort in private$.manifest) {
         cohort_label <- cohort$label
 
-        if (matchType == "exact") {
-          if (cohort_label == label) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
+        label_hits <- sapply(labels, function(lbl) {
+          if (matchType == "exact") {
+            cohort_label == lbl
+          } else {
+            grepl(lbl, cohort_label, ignore.case = TRUE)
           }
-        } else if (matchType == "pattern") {
-          # Use grepl for pattern matching (case-insensitive)
-          if (grepl(label, cohort_label, ignore.case = TRUE)) {
-            matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
-          }
+        })
+
+        if (any(label_hits)) {
+          matching_cohorts[[length(matching_cohorts) + 1]] <- cohort
         }
       }
 
       if (length(matching_cohorts) == 0) {
-        cli::cli_alert_warning("No cohorts found with {matchType} label match '{label}'")
+        match_desc <- paste(labels, collapse = " | ")
+        cli::cli_alert_warning("No cohorts found with {matchType} label match: {match_desc}")
         return(NULL)
       }
 
@@ -1420,9 +1466,300 @@ CohortManifest <- R6::R6Class(
       invisible(next_id)
     },
 
-    
+    #' Sync the manifest against cohort files on disk
+    #'
+    #' @description
+    #' Scans the \code{json/} and \code{sql/} subdirectories of the cohorts folder, reconciles
+    #' them against the SQLite manifest, and updates both the database and the in-memory list:
+    #' \itemize{
+    #'   \item New files found on disk are added (new CohortDef + manifest entry).
+    #'   \item Active manifest records whose file no longer exists are soft-deleted.
+    #'   \item Existing files whose SQL hash has changed are updated in the manifest.
+    #' }
+    #' Only the \code{json/} and \code{sql/} source directories are scanned — derived cohorts
+    #' managed via \code{build*()} / \code{addDependentCohort()} are not touched.
+    #'
+    #' @return Data frame with columns: id, label, action
+    #'   (\code{"added"}, \code{"hash_updated"}, \code{"missing_flagged"}, or \code{"unchanged"}).
+    syncManifest = function() {
+      cohorts_folder <- dirname(private$.dbPath)
+      json_dir <- file.path(cohorts_folder, "json")
+      sql_dir  <- file.path(cohorts_folder, "sql")
 
-    
+      # Collect all source files currently on disk
+      on_disk <- c()
+
+      if (dir.exists(json_dir)) {
+        on_disk <- c(on_disk, list.files(json_dir, pattern = "\\.json$",
+                                          full.names = TRUE, recursive = TRUE))
+      }
+
+      if (dir.exists(sql_dir)) {
+        on_disk <- c(on_disk, list.files(sql_dir, pattern = "\\.sql$",
+                                          full.names = TRUE, recursive = TRUE))
+      }
+
+      on_disk_rel <- fs::path_rel(on_disk)
+
+      # Pull current active source records from the SQLite manifest
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+
+      db_records <- DBI::dbGetQuery(
+        conn,
+        "SELECT id, label, tags, filePath, hash, cohortType, status
+         FROM cohort_manifest
+         WHERE cohortType = 'circe'"
+      )
+
+      results <- data.frame(
+        id     = integer(),
+        label  = character(),
+        action = character(),
+        stringsAsFactors = FALSE
+      )
+
+      cli::cli_rule("Syncing Manifest")
+
+      # ── Step 1: check files already in the manifest ──────────────────────────
+      for (i in seq_len(nrow(db_records))) {
+        rec        <- db_records[i, ]
+        rec_id     <- rec$id
+        rec_label  <- rec$label
+        rec_status <- rec$status
+        file_path  <- rec$filePath
+
+        if (rec_status == "active" && !file.exists(file_path)) {
+          # File has gone missing — soft-delete
+          DBI::dbExecute(
+            conn,
+            "UPDATE cohort_manifest SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+            list(rec_id)
+          )
+          # Remove from in-memory list
+          private$.manifest <- Filter(function(c) c$getId() != rec_id, private$.manifest)
+          cli::cli_alert_warning("Missing: {rec_label} (ID {rec_id}) — soft-deleted")
+          results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                                action = "missing_flagged", stringsAsFactors = FALSE))
+          next
+        }
+
+        if (!file.exists(file_path)) {
+          next  # already deleted/purged record with missing file — skip
+        }
+
+        # Recompute hash and compare
+        tryCatch({
+          tmp_def <- CohortDef$new(label = rec_label, tags = list(), filePath = file_path)
+          new_hash <- tmp_def$getHash()
+
+          if (new_hash != rec$hash) {
+            DBI::dbExecute(
+              conn,
+              "UPDATE cohort_manifest SET hash = ?, timestamp = CURRENT_TIMESTAMP WHERE id = ?",
+              list(new_hash, rec_id)
+            )
+            # Update in-memory entry if present
+            for (cohort in private$.manifest) {
+              if (cohort$getId() == rec_id) {
+                # CohortDef reloads hash on construction; replace the stored object
+                tmp_def$setId(as.integer(rec_id))
+                tmp_def$setCohortType(rec$cohortType)
+                if (!is.na(rec$tags) && rec$tags != "") {
+                  tmp_def$tags <- picard::parseTagsString(rec$tags)
+                }
+                private$.manifest[[which(sapply(private$.manifest, function(c) c$getId() == rec_id))]] <- tmp_def
+                break
+              }
+            }
+            cli::cli_alert_warning("Hash updated: {rec_label} (ID {rec_id})")
+            results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                                  action = "hash_updated", stringsAsFactors = FALSE))
+          } else {
+            results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                                  action = "unchanged", stringsAsFactors = FALSE))
+          }
+        }, error = function(e) {
+          cli::cli_alert_danger("Error checking {rec_label}: {e$message}")
+        })
+      }
+
+      # ── Step 2: discover new files not yet in the manifest ───────────────────
+      existing_rel <- db_records$filePath  # stored as relative paths
+      new_files    <- on_disk[!(on_disk_rel %in% existing_rel)]
+
+      if (length(new_files) > 0) {
+        cli::cli_alert_info("Found {length(new_files)} new cohort file(s)")
+      }
+
+      for (file_path in new_files) {
+        label <- tools::file_path_sans_ext(basename(file_path))
+        tryCatch({
+          new_def <- CohortDef$new(label = label, tags = list(), filePath = file_path)
+
+          # Determine next ID
+          max_id_result <- DBI::dbGetQuery(conn, "SELECT MAX(id) as max_id FROM cohort_manifest")
+          max_id  <- ifelse(!is.na(max_id_result$max_id[1]), max_id_result$max_id[1], 0)
+          next_id <- as.integer(max_id + 1)
+          new_def$setId(next_id)
+
+          DBI::dbExecute(
+            conn,
+            "INSERT INTO cohort_manifest (id, label, tags, filePath, hash, cohortType, timestamp, status)
+             VALUES (?, ?, ?, ?, ?, 'circe', CURRENT_TIMESTAMP, 'active')",
+            list(next_id, label, "", new_def$getFilePath(), new_def$getHash())
+          )
+
+          private$.manifest[[length(private$.manifest) + 1]] <- new_def
+          cli::cli_alert_success("Added: {label} (ID {next_id})")
+          results <- rbind(results, data.frame(id = next_id, label = label,
+                                                action = "added", stringsAsFactors = FALSE))
+        }, error = function(e) {
+          cli::cli_alert_danger("Error adding {label}: {e$message}")
+        })
+      }
+
+      # ── Summary ──────────────────────────────────────────────────────────────
+      n_added   <- sum(results$action == "added")
+      n_updated <- sum(results$action == "hash_updated")
+      n_missing <- sum(results$action == "missing_flagged")
+      n_same    <- sum(results$action == "unchanged")
+      cli::cli_rule()
+      cli::cli_alert_success(
+        "Sync complete — Added: {n_added} | Updated: {n_updated} | Missing: {n_missing} | Unchanged: {n_same}"
+      )
+
+      return(results)
+    },
+
+    #' Clean cohort data from the DBMS for deleted manifest entries
+    #'
+    #' @description
+    #' For every cohort with \code{status = 'deleted'} in the SQLite manifest, deletes
+    #' the corresponding rows from the DBMS cohort table and checksum table, then marks
+    #' the manifest record as \code{status = 'purged'} so it is not processed again.
+    #'
+    #' @details
+    #' Requires that \code{executionSettings} has been set with a valid database connection,
+    #' \code{workDatabaseSchema}, and \code{cohortTable}.
+    #'
+    #' @return Data frame with columns: id, label.
+    cleanCohortTable = function() {
+      private$validateExecutionSettings()
+
+      settings <- private$.executionSettings
+      conn_db <- settings$getConnection()
+      if (is.null(conn_db)) {
+        settings$connect()
+        conn_db <- settings$getConnection()
+      }
+      on.exit(settings$disconnect())
+
+      cohort_schema <- settings$workDatabaseSchema
+      if (is.null(cohort_schema) || is.na(cohort_schema)) {
+        cli::cli_abort("workDatabaseSchema must be set in execution settings")
+      }
+
+      cohort_table <- settings$cohortTable
+      if (is.null(cohort_table) || is.na(cohort_table)) {
+        cli::cli_abort("cohortTable must be set in execution settings")
+      }
+
+      table_names <- getCohortTableNames(cohortTable = cohort_table)
+      checksum_table <- table_names$cohortChecksumTable
+
+      # Get all deleted cohort IDs from SQLite
+      conn_sqlite <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn_sqlite), add = TRUE)
+
+      deleted_records <- DBI::dbGetQuery(
+        conn_sqlite,
+        "SELECT id, label FROM cohort_manifest WHERE status = 'deleted'"
+      )
+
+      if (nrow(deleted_records) == 0) {
+        cli::cli_alert_info("No deleted cohorts to clean from DBMS")
+        return(data.frame(id = integer(), label = character(),
+                          stringsAsFactors = FALSE))
+      }
+
+      cli::cli_rule("Cleaning Cohort Table")
+      cli::cli_alert_info("Purging {nrow(deleted_records)} deleted cohort(s) from DBMS")
+
+      results <- data.frame(
+        id               = integer(),
+        label            = character(),
+        stringsAsFactors = FALSE
+      )
+
+      for (i in seq_len(nrow(deleted_records))) {
+        rec   <- deleted_records[i, ]
+        cid   <- rec$id
+        label <- rec$label
+
+        cohort_del <- 0L
+        chksum_del <- 0L
+
+        # Delete from cohort table
+        tryCatch({
+          del_sql <- SqlRender::translate(
+            SqlRender::render(
+              "DELETE FROM @schema.@table WHERE cohort_definition_id = @id;",
+              schema = cohort_schema, table = cohort_table, id = cid
+            ),
+            targetDialect = settings$getDbms()
+          )
+          DatabaseConnector::executeSql(conn_db, del_sql,
+                                        progressBar = FALSE, reportOverallTime = FALSE)
+          # Approximate rows deleted via cohort counts query
+          count_sql <- SqlRender::translate(
+            SqlRender::render(
+              "SELECT COUNT(*) AS n FROM @schema.@table WHERE cohort_definition_id = @id;",
+              schema = cohort_schema, table = cohort_table, id = cid
+            ),
+            targetDialect = settings$getDbms()
+          )
+          cohort_del <- 0L  # rows already gone; record as 0 post-delete
+        }, error = function(e) {
+          cli::cli_alert_danger("Failed to clean cohort table for ID {cid}: {e$message}")
+        })
+
+        # Delete from checksum table
+        tryCatch({
+          chk_sql <- SqlRender::translate(
+            SqlRender::render(
+              "DELETE FROM @schema.@table WHERE cohort_definition_id = @id;",
+              schema = cohort_schema, table = checksum_table, id = cid
+            ),
+            targetDialect = settings$getDbms()
+          )
+          DatabaseConnector::executeSql(conn_db, chk_sql,
+                                        progressBar = FALSE, reportOverallTime = FALSE)
+          chksum_del <- 0L
+        }, error = function(e) {
+          cli::cli_alert_danger("Failed to clean checksum table for ID {cid}: {e$message}")
+        })
+
+        # Mark as purged in SQLite
+        DBI::dbExecute(
+          conn_sqlite,
+          "UPDATE cohort_manifest SET status = 'purged', deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+          list(cid)
+        )
+
+        cli::cli_alert_success("Purged cohort {cid}: {label}")
+        results <- rbind(results, data.frame(
+          id               = cid,
+          label            = label,
+          stringsAsFactors = FALSE
+        ))
+      }
+
+      cli::cli_rule()
+      cli::cli_alert_success("Purged {nrow(results)} cohort(s) from DBMS")
+
+      return(results)
+    },
 
     #' @description
     #' Generates cohorts in the manifest in the target database using the execution settings.
@@ -1551,7 +1888,7 @@ CohortManifest <- R6::R6Class(
       # Generate each cohort in topological order
       for (idx in seq_along(sorted_cohort_ids)) {
         cohort_id <- sorted_cohort_ids[idx]
-        cohort <- self$grabCohortById(cohort_id)
+        cohort <- self$getCohortById(cohort_id)
 
         if (is.null(cohort)) {
           cli::cli_alert_danger("Cohort {cohort_id} not found in manifest")
@@ -1792,7 +2129,7 @@ CohortManifest <- R6::R6Class(
           if (idx < length(sorted_cohort_ids)) {
             for (j in (idx + 1):length(sorted_cohort_ids)) {
               remaining_cohort_id <- sorted_cohort_ids[j]
-              remaining_cohort <- self$grabCohortById(remaining_cohort_id)
+              remaining_cohort <- self$getCohortById(remaining_cohort_id)
               if (!is.null(remaining_cohort)) {
                 remaining_deps <- remaining_cohort$getDependencies()
                 remaining_deps_str <- ifelse(length(remaining_deps$cohort_ids) > 0, paste(remaining_deps$cohort_ids, collapse = ", "), "")
@@ -1989,7 +2326,7 @@ CohortManifest <- R6::R6Class(
         # Join metadata from CohortDef objects
         for (i in seq_len(nrow(results))) {
           cohort_id <- results$cohort_id[i]
-          cohort <- self$grabCohortById(cohort_id)
+          cohort <- self$getCohortById(cohort_id)
           if (!is.null(cohort)) {
             results$label[i] <- cohort$label
             results$tags[i] <- cohort$formatTagsAsString()
@@ -2121,13 +2458,21 @@ CohortManifest <- R6::R6Class(
       })
     },
 
-    #' @description Hard delete a cohort (removes the record from database, irreversible)
+    #' @description Permanently delete a cohort (removes the record from database, irreversible)
     #'
     #' @param id Integer. The cohort ID to permanently remove.
+    #' @param confirm Logical. Must be TRUE to proceed. Defaults to FALSE as a safety guard.
     #'
     #' @return Invisibly returns TRUE if successful, FALSE otherwise.
-    hardRemoveCohort = function(id) {
+    permanentlyDeleteCohort = function(id, confirm = FALSE) {
       checkmate::assert_int(id)
+
+      if (!confirm) {
+        cli::cli_abort(
+          "This operation permanently removes the cohort record from the database and cannot be undone. \
+          Pass confirm = TRUE to proceed."
+        )
+      }
       
       conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
       on.exit(DBI::dbDisconnect(conn))
@@ -2191,7 +2536,7 @@ CohortManifest <- R6::R6Class(
         if (keep_trace) {
           self$deleteCohort(cohort_id, reason = "missing file")
         } else {
-          self$hardRemoveCohort(cohort_id)
+          self$permanentlyDeleteCohort(cohort_id, confirm = TRUE)
         }
       }
       

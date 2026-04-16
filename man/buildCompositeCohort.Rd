@@ -10,7 +10,7 @@ buildCompositeCohort(
   minimumEventCount = 1,
   eventSelection = "First",
   cohortsFolder = here::here("inputs/cohorts"),
-  manifest = NULL
+  manifest
 )
 }
 \arguments{
@@ -31,8 +31,8 @@ retain as the cohort_start_date and cohort_end_date in the output:
 Default: 'First'.
 }}
 
-\item{manifest}{CohortManifest object (optional). If provided, validates that all criteria cohorts exist.
-Recommended to ensure referential integrity. If NULL, a warning is issued.}
+\item{manifest}{CohortManifest object. Required. Validates that all criteria cohorts exist and
+automatically registers the new cohort via addDependentCohort().}
 
 \item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }

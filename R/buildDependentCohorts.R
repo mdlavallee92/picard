@@ -194,8 +194,8 @@ createSubsetEndWindow <- function(
 #'   to retain per subject. 'First' keeps the earliest event, 'Last' keeps the most recent event, 'All' keeps all 
 #'   qualifying events. Default: 'First'.
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
-#' @param manifest CohortManifest object (optional). If provided, validates that base cohorts exist.
-#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#' @param manifest CohortManifest object. Required. Validates that base cohorts exist and
+#'   automatically registers the new cohort via addDependentCohort().
 #'
 #' @details
 #' Creates three files:
@@ -238,7 +238,7 @@ buildSubsetCohortTemporal <- function(
     endDateType = "base", 
     subsetLimit = "First",
     cohortsFolder = here::here("inputs/cohorts"),
-    manifest = NULL) {
+    manifest) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
@@ -248,24 +248,17 @@ buildSubsetCohortTemporal <- function(
   checkmate::assert_choice(x = subsetLimit, choices = c("First", "All", "Last"))
   checkmate::assert_class(x = startWindow, classes = "SubsetWindowOperator")
   checkmate::assert_class(x = endWindow, classes = "SubsetWindowOperator", null.ok = TRUE)
-  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+  checkmate::assert_class(x = manifest, classes = "CohortManifest")
 
-  # Warn if manifest not provided
-  if (is.null(manifest)) {
-    cli::cli_alert_warning(
-      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
-      to validate that base cohorts ({baseCohortId}, {filterCohortId}) exist. \\
-      Proceeding without validation may create broken dependencies."
-    )
-  } else {
-    # Validate base cohorts exist in manifest
-    manifest_ids <- manifest$tabulateManifest()$id
-    if (!baseCohortId %in% manifest_ids) {
-      cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
-    }
-    if (!filterCohortId %in% manifest_ids) {
-      cli::cli_abort("Filter cohort ID {filterCohortId} not found in manifest")
-    }
+  # Validate base cohorts exist in manifest
+  manifest_ids <- manifest$tabulateManifest()$id
+
+  if (!baseCohortId %in% manifest_ids) {
+    cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
+  }
+
+  if (!filterCohortId %in% manifest_ids) {
+    cli::cli_abort("Filter cohort ID {filterCohortId} not found in manifest")
   }
 
   # Create derived/subset directory if it doesn't exist
@@ -366,6 +359,7 @@ buildSubsetCohortTemporal <- function(
     )
   )
 
+  manifest$addDependentCohort(cohort_def)
   return(cohort_def)
 }
 
@@ -384,8 +378,8 @@ buildSubsetCohortTemporal <- function(
 #' @param raceConceptIds Numeric vector. Race concept IDs to include. NULL = all. Default: NULL
 #' @param ethnicityConceptIds Numeric vector. Ethnicity concept IDs to include. NULL = all. Default: NULL
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
-#' @param manifest CohortManifest object (optional). If provided, validates that base cohort exists.
-#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#' @param manifest CohortManifest object. Required. Validates that the base cohort exists and
+#'   automatically registers the new cohort via addDependentCohort().
 #'
 #' @details
 #' Creates three files:
@@ -404,8 +398,8 @@ buildSubsetCohortDemographic <- function(
     genderConceptIds = NULL,
     raceConceptIds = NULL,
     ethnicityConceptIds = NULL,
-    ccohortsFolder = here::here("inputs/cohorts"),
-    manifest = NULL) {
+    cohortsFolder = here::here("inputs/cohorts"),
+    manifest) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
@@ -415,21 +409,13 @@ buildSubsetCohortDemographic <- function(
   checkmate::assert_vector(x = genderConceptIds, null.ok = TRUE)
   checkmate::assert_vector(x = raceConceptIds, null.ok = TRUE)
   checkmate::assert_vector(x = ethnicityConceptIds, null.ok = TRUE)
-  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+  checkmate::assert_class(x = manifest, classes = "CohortManifest")
 
-  # Warn if manifest not provided
-  if (is.null(manifest)) {
-    cli::cli_alert_warning(
-      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
-      to validate that base cohort {baseCohortId} exists. \\
-      Proceeding without validation may create broken dependencies."
-    )
-  } else {
-    # Validate base cohort exists in manifest
-    manifest_ids <- manifest$tabulateManifest()$id
-    if (!baseCohortId %in% manifest_ids) {
-      cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
-    }
+  # Validate base cohort exists in manifest
+  manifest_ids <- manifest$tabulateManifest()$id
+
+  if (!baseCohortId %in% manifest_ids) {
+    cli::cli_abort("Base cohort ID {baseCohortId} not found in manifest")
   }
 
   # Create derived/subset_demo directory if it doesn't exist
@@ -521,6 +507,7 @@ buildSubsetCohortDemographic <- function(
     )
   )
 
+  manifest$addDependentCohort(cohort_def)
   return(cohort_def)
 }
 
@@ -538,8 +525,8 @@ buildSubsetCohortDemographic <- function(
 #'   - 'at_least_n': subjects appearing in at least N cohorts
 #' @param atLeastN Integer. Number of cohorts required (only if unionRule='at_least_n'). Default: 2
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
-#' @param manifest CohortManifest object (optional). If provided, validates that all input cohorts exist.
-#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#' @param manifest CohortManifest object. Required. Validates that all input cohorts exist and
+#'   automatically registers the new cohort via addDependentCohort().
 #'
 #' @details
 #' Creates three files:
@@ -556,29 +543,21 @@ buildUnionCohort <- function(
     unionRule = "any",
     atLeastN = 2L,
     cohortsFolder = here::here("inputs/cohorts"),
-    manifest = NULL) {
+    manifest) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
   checkmate::assert_integerish(x = cohortIds, min.len = 2, unique = TRUE, lower = 1)
   checkmate::assert_choice(x = unionRule, choices = c("any", "all", "at_least_n"))
   checkmate::assert_integerish(x = atLeastN, len = 1, lower = 1)
-  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+  checkmate::assert_class(x = manifest, classes = "CohortManifest")
 
-  # Warn if manifest not provided
-  if (is.null(manifest)) {
-    cli::cli_alert_warning(
-      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
-      to validate that all input cohorts ({paste(cohortIds, collapse = ', ')}) exist. \\
-      Proceeding without validation may create broken dependencies."
-    )
-  } else {
-    # Validate all input cohorts exist in manifest
-    manifest_ids <- manifest$tabulateManifest()$id
-    missing_ids <- setdiff(cohortIds, manifest_ids)
-    if (length(missing_ids) > 0) {
-      cli::cli_abort("Input cohort {if (length(missing_ids) == 1) 'ID' else 'IDs'} {paste(missing_ids, collapse = ', ')} not found in manifest")
-    }
+  # Validate all input cohorts exist in manifest
+  manifest_ids <- manifest$tabulateManifest()$id
+  missing_ids <- setdiff(cohortIds, manifest_ids)
+
+  if (length(missing_ids) > 0) {
+    cli::cli_abort("Input cohort {if (length(missing_ids) == 1) 'ID' else 'IDs'} {paste(missing_ids, collapse = ', ')} not found in manifest")
   }
 
   # Create derived/union directory if it doesn't exist
@@ -647,6 +626,7 @@ buildUnionCohort <- function(
     )
   )
 
+  manifest$addDependentCohort(cohort_def)
   return(cohort_def)
 }
 
@@ -665,8 +645,8 @@ buildUnionCohort <- function(
 #'   - 'exclude_any': remove subjects in ANY exclude cohort
 #'   - 'exclude_all': remove subjects only if in ALL exclude cohorts
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
-#' @param manifest CohortManifest object (optional). If provided, validates that population and exclude cohorts exist.
-#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#' @param manifest CohortManifest object. Required. Validates that population and exclude cohorts exist and
+#'   automatically registers the new cohort via addDependentCohort().
 #'
 #' @details
 #' Creates three files:
@@ -683,39 +663,31 @@ buildComplementCohort <- function(
     excludeCohortIds,
     complementType = "exclude_any",
     cohortsFolder = here::here("inputs/cohorts"),
-    manifest = NULL) {
+    manifest) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
   checkmate::assert_integerish(x = populationCohortId, len = 1, lower = 1)
   checkmate::assert_integerish(x = excludeCohortIds, min.len = 1, unique = TRUE, lower = 1)
   checkmate::assert_choice(x = complementType, choices = c("exclude_any", "exclude_all"))
-  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+  checkmate::assert_class(x = manifest, classes = "CohortManifest")
 
   # Ensure populationCohortId not in excludeCohortIds
   if (populationCohortId %in% excludeCohortIds) {
     cli::cli_abort("Population cohort ID {populationCohortId} cannot be in exclude list")
   }
 
-  # Warn if manifest not provided
-  if (is.null(manifest)) {
-    cli::cli_alert_warning(
-      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
-      to validate that population cohort {populationCohortId} and exclude cohorts ({paste(excludeCohortIds, collapse = ', ')}) exist. \\
-      Proceeding without validation may create broken dependencies."
-    )
-  } else {
-    # Validate population and exclude cohorts exist in manifest
-    manifest_ids <- manifest$tabulateManifest()$id
-    
-    if (!populationCohortId %in% manifest_ids) {
-      cli::cli_abort("Population cohort ID {populationCohortId} not found in manifest")
-    }
-    
-    missing_ids <- setdiff(excludeCohortIds, manifest_ids)
-    if (length(missing_ids) > 0) {
-      cli::cli_abort("Exclude cohort {if (length(missing_ids) == 1) 'ID' else 'IDs'} {paste(missing_ids, collapse = ', ')} not found in manifest")
-    }
+  # Validate population and exclude cohorts exist in manifest
+  manifest_ids <- manifest$tabulateManifest()$id
+
+  if (!populationCohortId %in% manifest_ids) {
+    cli::cli_abort("Population cohort ID {populationCohortId} not found in manifest")
+  }
+
+  missing_ids <- setdiff(excludeCohortIds, manifest_ids)
+
+  if (length(missing_ids) > 0) {
+    cli::cli_abort("Exclude cohort {if (length(missing_ids) == 1) 'ID' else 'IDs'} {paste(missing_ids, collapse = ', ')} not found in manifest")
   }
 
   # Create derived/complement directory if it doesn't exist
@@ -788,6 +760,7 @@ buildComplementCohort <- function(
     )
   )
 
+  manifest$addDependentCohort(cohort_def)
   return(cohort_def)
 }
 
@@ -810,8 +783,8 @@ buildComplementCohort <- function(
 #'   - 'All': Keep all qualifying events per subject (may result in multiple rows per subject)
 #'   Default: 'First'.
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
-#' @param manifest CohortManifest object (optional). If provided, validates that all criteria cohorts exist.
-#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#' @param manifest CohortManifest object. Required. Validates that all criteria cohorts exist and
+#'   automatically registers the new cohort via addDependentCohort().
 #'
 #' @details
 #' Creates three files:
@@ -839,29 +812,21 @@ buildCompositeCohort <- function(
     minimumEventCount = 1,
     eventSelection = "First",
     cohortsFolder = here::here("inputs/cohorts"),
-    manifest = NULL) {
+    manifest) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
   checkmate::assert_integerish(x = criteriaCohortIds, lower = 1, min.len = 1)
   checkmate::assert_integerish(x = minimumEventCount, len = 1, lower = 1)
   checkmate::assert_choice(x = eventSelection, choices = c("First", "Last", "All"))
-  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+  checkmate::assert_class(x = manifest, classes = "CohortManifest")
 
-  # Warn if manifest not provided
-  if (is.null(manifest)) {
-    cli::cli_alert_warning(
-      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
-      to validate that criteria cohorts exist. \\
-      Proceeding without validation may create broken dependencies."
-    )
-  } else {
-    # Validate criteria cohorts exist in manifest
-    manifest_ids <- manifest$tabulateManifest()$id
-    missing_ids <- setdiff(criteriaCohortIds, manifest_ids)
-    if (length(missing_ids) > 0) {
-      cli::cli_abort("Criteria cohort IDs not found in manifest: {paste(missing_ids, collapse = ', ')}")
-    }
+  # Validate criteria cohorts exist in manifest
+  manifest_ids <- manifest$tabulateManifest()$id
+  missing_ids <- setdiff(criteriaCohortIds, manifest_ids)
+
+  if (length(missing_ids) > 0) {
+    cli::cli_abort("Criteria cohort IDs not found in manifest: {paste(missing_ids, collapse = ', ')}")
   }
 
   # Create derived/composite directory if it doesn't exist
@@ -941,5 +906,6 @@ buildCompositeCohort <- function(
     )
   )
 
+  manifest$addDependentCohort(cohort_def)
   return(cohort_def)
 }

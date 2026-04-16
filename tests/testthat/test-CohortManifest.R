@@ -88,7 +88,7 @@ test_that("CohortManifest creates cohort_manifest table", {
   expect_true(all(expected_cols %in% columns))
 })
 
-test_that("CohortManifest getCohortById returns correct cohort", {
+test_that("CohortManifest queryCohortsByIds returns correct cohort data frame", {
   temp_dir <- tempfile(prefix = "picard_test_")
   dir.create(temp_dir, recursive = TRUE)
   on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
@@ -118,14 +118,14 @@ test_that("CohortManifest getCohortById returns correct cohort", {
     dbPath = db_path
   )
 
-  result <- manifest$getCohortById(1)
+  result <- manifest$queryCohortsByIds(1L)
 
   expect_equal(nrow(result), 1)
   expect_equal(result$label[1], "Test Cohort")
   expect_equal(result$id[1], 1)
 })
 
-test_that("CohortManifest grabCohortById returns CohortDef object", {
+test_that("CohortManifest getCohortById returns CohortDef object", {
   temp_dir <- tempfile(prefix = "picard_test_")
   dir.create(temp_dir, recursive = TRUE)
   on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
@@ -155,7 +155,7 @@ test_that("CohortManifest grabCohortById returns CohortDef object", {
     dbPath = db_path
   )
 
-  grabbed_cohort <- manifest$grabCohortById(1)
+  grabbed_cohort <- manifest$getCohortById(1)
 
   expect_s3_class(grabbed_cohort, "CohortDef")
   expect_equal(grabbed_cohort$label, "Test Cohort")
@@ -198,7 +198,7 @@ test_that("CohortManifest nCohorts returns correct count", {
   expect_equal(manifest$nCohorts(), 3)
 })
 
-test_that("CohortManifest getCohortsByTag filters correctly", {
+test_that("CohortManifest queryCohortsByTag filters correctly", {
   temp_dir <- tempfile(prefix = "picard_test_")
   dir.create(temp_dir, recursive = TRUE)
   on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
@@ -238,10 +238,104 @@ test_that("CohortManifest getCohortsByTag filters correctly", {
     dbPath = db_path
   )
 
-  result <- manifest$getCohortsByTag("category: primary")
+  result <- manifest$queryCohortsByTag("category: primary")
 
   expect_equal(nrow(result), 1)
   expect_equal(result$label[1], "Primary Cohort")
+})
+
+test_that("CohortManifest queryCohortsByTag match='all' requires all tags", {
+  temp_dir <- tempfile(prefix = "picard_test_")
+  dir.create(temp_dir, recursive = TRUE)
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+
+  temp_sql1 <- tempfile(fileext = ".sql")
+  writeLines("SELECT 1;", temp_sql1)
+  on.exit(unlink(temp_sql1), add = TRUE)
+
+  temp_sql2 <- tempfile(fileext = ".sql")
+  writeLines("SELECT 2;", temp_sql2)
+  on.exit(unlink(temp_sql2), add = TRUE)
+
+  cohort1 <- CohortDef$new(
+    label = "Both Tags Cohort",
+    tags = list(category = "primary", type = "exposure"),
+    filePath = temp_sql1
+  )
+
+  cohort2 <- CohortDef$new(
+    label = "One Tag Cohort",
+    tags = list(category = "primary", type = "outcome"),
+    filePath = temp_sql2
+  )
+
+  mock_settings <- list(
+    databaseName = "test_db",
+    getConnection = function() NULL,
+    disconnect = function() {}
+  )
+  class(mock_settings) <- "ExecutionSettings"
+
+  db_path <- file.path(temp_dir, "test.sqlite")
+
+  manifest <- CohortManifest$new(
+    cohortEntries = list(cohort1, cohort2),
+    executionSettings = mock_settings,
+    dbPath = db_path
+  )
+
+  # 'any' returns both
+  result_any <- manifest$queryCohortsByTag(
+    c("category: primary", "type: exposure"),
+    match = "any"
+  )
+  expect_equal(nrow(result_any), 2)
+
+  # 'all' returns only the cohort that has both tags
+  result_all <- manifest$queryCohortsByTag(
+    c("category: primary", "type: exposure"),
+    match = "all"
+  )
+  expect_equal(nrow(result_all), 1)
+  expect_equal(result_all$label[1], "Both Tags Cohort")
+})
+
+test_that("CohortManifest queryCohortsByIds accepts vector of IDs", {
+  temp_dir <- tempfile(prefix = "picard_test_")
+  dir.create(temp_dir, recursive = TRUE)
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+
+  cohorts <- list()
+  for (i in 1:3) {
+    temp_sql <- tempfile(fileext = ".sql")
+    writeLines("SELECT 1;", temp_sql)
+    on.exit(unlink(temp_sql), add = TRUE)
+    cohorts[[i]] <- CohortDef$new(
+      label = paste("Cohort", i),
+      tags = list(),
+      filePath = temp_sql
+    )
+  }
+
+  mock_settings <- list(
+    databaseName = "test_db",
+    getConnection = function() NULL,
+    disconnect = function() {}
+  )
+  class(mock_settings) <- "ExecutionSettings"
+
+  db_path <- file.path(temp_dir, "test.sqlite")
+
+  manifest <- CohortManifest$new(
+    cohortEntries = cohorts,
+    executionSettings = mock_settings,
+    dbPath = db_path
+  )
+
+  result <- manifest$queryCohortsByIds(c(1L, 3L))
+
+  expect_equal(nrow(result), 2)
+  expect_true(all(result$id %in% c(1L, 3L)))
 })
 
 # Database-dependent tests are skipped

@@ -10,7 +10,7 @@ buildUnionCohort(
   unionRule = "any",
   atLeastN = 2L,
   cohortsFolder = here::here("inputs/cohorts"),
-  manifest = NULL
+  manifest
 )
 }
 \arguments{
@@ -27,8 +27,8 @@ buildUnionCohort(
 
 \item{atLeastN}{Integer. Number of cohorts required (only if unionRule='at_least_n'). Default: 2}
 
-\item{manifest}{CohortManifest object (optional). If provided, validates that all input cohorts exist.
-Recommended to ensure referential integrity. If NULL, a warning is issued.}
+\item{manifest}{CohortManifest object. Required. Validates that all input cohorts exist and
+automatically registers the new cohort via addDependentCohort().}
 
 \item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }

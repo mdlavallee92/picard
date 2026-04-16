@@ -12,8 +12,8 @@ buildSubsetCohortDemographic(
   genderConceptIds = NULL,
   raceConceptIds = NULL,
   ethnicityConceptIds = NULL,
-  ccohortsFolder = here::here("inputs/cohorts"),
-  manifest = NULL
+  cohortsFolder = here::here("inputs/cohorts"),
+  manifest
 )
 }
 \arguments{
@@ -31,8 +31,8 @@ buildSubsetCohortDemographic(
 
 \item{ethnicityConceptIds}{Numeric vector. Ethnicity concept IDs to include. NULL = all. Default: NULL}
 
-\item{manifest}{CohortManifest object (optional). If provided, validates that base cohort exists.
-Recommended to ensure referential integrity. If NULL, a warning is issued.}
+\item{manifest}{CohortManifest object. Required. Validates that the base cohort exists and
+automatically registers the new cohort via addDependentCohort().}
 
 \item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }

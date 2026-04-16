@@ -38,6 +38,9 @@ The cohort is assigned a new ID equal to max(existing_id) + 1. Parent cohorts
 (specified in dependsOnCohortIds) must already exist in this manifest.
 The cohort is immediately persisted to the SQLite manifest database.
 
+Requires that \code{executionSettings} has been set with a valid database connection,
+\code{workDatabaseSchema}, and \code{cohortTable}.
+
 Execution flow:
 \enumerate{
 \item Build dependency graph from all CohortDef objects
@@ -71,22 +74,24 @@ Requires that executionSettings has been set and includes:
 \item \href{#method-CohortManifest-getDbPath}{\code{CohortManifest$getDbPath()}}
 \item \href{#method-CohortManifest-getExecutionSettings}{\code{CohortManifest$getExecutionSettings()}}
 \item \href{#method-CohortManifest-setExecutionSettings}{\code{CohortManifest$setExecutionSettings()}}
+\item \href{#method-CohortManifest-queryCohortsByIds}{\code{CohortManifest$queryCohortsByIds()}}
+\item \href{#method-CohortManifest-queryCohortsByTag}{\code{CohortManifest$queryCohortsByTag()}}
+\item \href{#method-CohortManifest-queryCohortsByLabel}{\code{CohortManifest$queryCohortsByLabel()}}
+\item \href{#method-CohortManifest-nCohorts}{\code{CohortManifest$nCohorts()}}
 \item \href{#method-CohortManifest-getCohortById}{\code{CohortManifest$getCohortById()}}
 \item \href{#method-CohortManifest-getCohortsByTag}{\code{CohortManifest$getCohortsByTag()}}
 \item \href{#method-CohortManifest-getCohortsByLabel}{\code{CohortManifest$getCohortsByLabel()}}
-\item \href{#method-CohortManifest-nCohorts}{\code{CohortManifest$nCohorts()}}
-\item \href{#method-CohortManifest-grabCohortById}{\code{CohortManifest$grabCohortById()}}
-\item \href{#method-CohortManifest-grabCohortsByTag}{\code{CohortManifest$grabCohortsByTag()}}
-\item \href{#method-CohortManifest-grabCohortsByLabel}{\code{CohortManifest$grabCohortsByLabel()}}
 \item \href{#method-CohortManifest-createCohortTables}{\code{CohortManifest$createCohortTables()}}
 \item \href{#method-CohortManifest-dropCohortTables}{\code{CohortManifest$dropCohortTables()}}
 \item \href{#method-CohortManifest-addDependentCohort}{\code{CohortManifest$addDependentCohort()}}
+\item \href{#method-CohortManifest-syncManifest}{\code{CohortManifest$syncManifest()}}
+\item \href{#method-CohortManifest-cleanCohortTable}{\code{CohortManifest$cleanCohortTable()}}
 \item \href{#method-CohortManifest-generateCohorts}{\code{CohortManifest$generateCohorts()}}
 \item \href{#method-CohortManifest-retrieveCohortCounts}{\code{CohortManifest$retrieveCohortCounts()}}
 \item \href{#method-CohortManifest-validateManifest}{\code{CohortManifest$validateManifest()}}
 \item \href{#method-CohortManifest-getManifestStatus}{\code{CohortManifest$getManifestStatus()}}
 \item \href{#method-CohortManifest-deleteCohort}{\code{CohortManifest$deleteCohort()}}
-\item \href{#method-CohortManifest-hardRemoveCohort}{\code{CohortManifest$hardRemoveCohort()}}
+\item \href{#method-CohortManifest-permanentlyDeleteCohort}{\code{CohortManifest$permanentlyDeleteCohort()}}
 \item \href{#method-CohortManifest-cleanupMissing}{\code{CohortManifest$cleanupMissing()}}
 \item \href{#method-CohortManifest-clone}{\code{CohortManifest$clone()}}
 }
@@ -184,63 +189,69 @@ Set the execution settings
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{executionSettings}}{Object. Execution settings for DBMS cohort generation.
-Get a specific cohort by ID}
+Query cohorts by IDs}
 }
 \if{html}{\out{</div>}}
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-getCohortById"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortById}{}}}
-\subsection{Method \code{getCohortById()}}{
+\if{html}{\out{<a id="method-CohortManifest-queryCohortsByIds"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-queryCohortsByIds}{}}}
+\subsection{Method \code{queryCohortsByIds()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortById(id)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$queryCohortsByIds(ids)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{id}}{Integer. The cohort ID.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for the requested cohort.
-Get cohorts by tag
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-getCohortsByTag"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortsByTag}{}}}
-\subsection{Method \code{getCohortsByTag()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortsByTag(tagString)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{tagString}}{Character. A tag in the format "name: value" (e.g., "category: primary").}
+\item{\code{ids}}{Integer vector. One or more cohort IDs.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
 Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching cohorts, or NULL if none found.
-Get cohorts by label
+Query cohorts by tag
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-getCohortsByLabel"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortsByLabel}{}}}
-\subsection{Method \code{getCohortsByLabel()}}{
+\if{html}{\out{<a id="method-CohortManifest-queryCohortsByTag"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-queryCohortsByTag}{}}}
+\subsection{Method \code{queryCohortsByTag()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortsByLabel(label, matchType = c("exact", "pattern"))}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$queryCohortsByTag(tagStrings, match = c("any", "all"))}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{label}}{Character. The label to search for.}
+\item{\code{tagStrings}}{Character vector. One or more tags in the format "name: value"
+(e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+argument controls whether a cohort must satisfy any or all of them.}
+
+\item{\code{match}}{Character. "any" (default) returns cohorts matching at least one tag;
+"all" returns only cohorts matching every tag.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching cohorts, or NULL if none found.
+Query cohorts by label
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-queryCohortsByLabel"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-queryCohortsByLabel}{}}}
+\subsection{Method \code{queryCohortsByLabel()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$queryCohortsByLabel(labels, matchType = c("exact", "pattern"))}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{labels}}{Character vector. One or more labels to search for.
+A cohort is included when it matches at least one of the supplied labels (OR logic).}
 
 \item{\code{matchType}}{Character. Either "exact" for exact match or "pattern" for pattern matching.
 Defaults to "exact".}
@@ -262,15 +273,15 @@ Get number of cohorts in manifest
 
 \subsection{Returns}{
 Integer. The number of cohorts.
-Grab a specific cohort by ID
+Get a specific cohort by ID
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-grabCohortById"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-grabCohortById}{}}}
-\subsection{Method \code{grabCohortById()}}{
+\if{html}{\out{<a id="method-CohortManifest-getCohortById"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortById}{}}}
+\subsection{Method \code{getCohortById()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$grabCohortById(id)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortById(id)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -282,41 +293,47 @@ Grab a specific cohort by ID
 }
 \subsection{Returns}{
 CohortDef. The CohortDef object with matching ID, or NULL if not found.
-Grab cohorts by tag
+Get cohorts by tag
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-grabCohortsByTag"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-grabCohortsByTag}{}}}
-\subsection{Method \code{grabCohortsByTag()}}{
+\if{html}{\out{<a id="method-CohortManifest-getCohortsByTag"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortsByTag}{}}}
+\subsection{Method \code{getCohortsByTag()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$grabCohortsByTag(tagString)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortsByTag(tagStrings, match = c("any", "all"))}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{tagString}}{Character. A tag in the format "name: value" (e.g., "category: primary").}
+\item{\code{tagStrings}}{Character vector. One or more tags in the format "name: value"
+(e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+argument controls whether a cohort must satisfy any or all of them.}
+
+\item{\code{match}}{Character. "any" (default) returns cohorts matching at least one tag;
+"all" returns only cohorts matching every tag.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
 List. A list of CohortDef objects with matching tags, or NULL if none found.
-Grab cohorts by label
+Get cohorts by label
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-grabCohortsByLabel"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-grabCohortsByLabel}{}}}
-\subsection{Method \code{grabCohortsByLabel()}}{
+\if{html}{\out{<a id="method-CohortManifest-getCohortsByLabel"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-getCohortsByLabel}{}}}
+\subsection{Method \code{getCohortsByLabel()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$grabCohortsByLabel(label, matchType = c("exact", "pattern"))}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$getCohortsByLabel(labels, matchType = c("exact", "pattern"))}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{label}}{Character. The label to search for.}
+\item{\code{labels}}{Character vector. One or more labels to search for.
+A cohort is included when it matches at least one of the supplied labels (OR logic).}
 
 \item{\code{matchType}}{Character. Either "exact" for exact match or "pattern" for pattern matching.
 Defaults to "exact".}
@@ -388,6 +405,45 @@ Validates that parent cohorts exist in this manifest before adding.
 }
 \subsection{Returns}{
 Invisibly returns the assigned cohort ID.
+Sync the manifest against cohort files on disk
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-syncManifest"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-syncManifest}{}}}
+\subsection{Method \code{syncManifest()}}{
+Scans the \code{json/} and \code{sql/} subdirectories of the cohorts folder, reconciles
+them against the SQLite manifest, and updates both the database and the in-memory list:
+\itemize{
+\item New files found on disk are added (new CohortDef + manifest entry).
+\item Active manifest records whose file no longer exists are soft-deleted.
+\item Existing files whose SQL hash has changed are updated in the manifest.
+}
+Only the \code{json/} and \code{sql/} source directories are scanned — derived cohorts
+managed via \code{build*()} / \code{addDependentCohort()} are not touched.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$syncManifest()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+Data frame with columns: id, label, action
+(\code{"added"}, \code{"hash_updated"}, \code{"missing_flagged"}, or \code{"unchanged"}).
+Clean cohort data from the DBMS for deleted manifest entries
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CohortManifest-cleanCohortTable"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-cleanCohortTable}{}}}
+\subsection{Method \code{cleanCohortTable()}}{
+For every cohort with \code{status = 'deleted'} in the SQLite manifest, deletes
+the corresponding rows from the DBMS cohort table and checksum table, then marks
+the manifest record as \code{status = 'purged'} so it is not processed again.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$cleanCohortTable()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+Data frame with columns: id, label.
 }
 }
 \if{html}{\out{<hr>}}
@@ -497,18 +553,20 @@ Invisibly returns TRUE if successful, FALSE otherwise.
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CohortManifest-hardRemoveCohort"></a>}}
-\if{latex}{\out{\hypertarget{method-CohortManifest-hardRemoveCohort}{}}}
-\subsection{Method \code{hardRemoveCohort()}}{
-Hard delete a cohort (removes the record from database, irreversible)
+\if{html}{\out{<a id="method-CohortManifest-permanentlyDeleteCohort"></a>}}
+\if{latex}{\out{\hypertarget{method-CohortManifest-permanentlyDeleteCohort}{}}}
+\subsection{Method \code{permanentlyDeleteCohort()}}{
+Permanently delete a cohort (removes the record from database, irreversible)
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$hardRemoveCohort(id)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CohortManifest$permanentlyDeleteCohort(id, confirm = FALSE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{id}}{Integer. The cohort ID to permanently remove.}
+
+\item{\code{confirm}}{Logical. Must be TRUE to proceed. Defaults to FALSE as a safety guard.}
 }
 \if{html}{\out{</div>}}
 }
