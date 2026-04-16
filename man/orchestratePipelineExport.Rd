@@ -43,8 +43,8 @@ schema_review), runs QC validation on cohort completeness, and generates executi
 \details{
 The function orchestrates the complete pipeline export:
 \enumerate{
-\item Validates code state (git commit must be clean)
-\item Validates environment state and snapshots renv.lock
+\item Captures git commit SHA for reproducibility tracking
+\item Snapshots environment (renv.lock) for non-dev versions
 \item Discovers tasks for the specified pipeline version
 \item Merges results across all databases for each task via importAndBind()
 \item Generates reference files: cohortKey.csv, databaseInfo.csv
@@ -72,9 +72,10 @@ Output files created in version export folder:
 
 The function:
 \enumerate{
+\item Captures git commit SHA and (optionally) environment snapshot
 \item Scans the first database's version folder to discover available tasks
 \item For each task found, calls importAndBind() to merge across databases
-\item Tracks which files were successfully merged
+\item Generates reference and QC files
 \item Returns a summary data frame of the merge operation
 }
 

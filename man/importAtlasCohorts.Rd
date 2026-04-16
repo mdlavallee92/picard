@@ -4,7 +4,10 @@
 \alias{importAtlasCohorts}
 \title{Import CIRCE Cohort Definitions from ATLAS}
 \usage{
-importAtlasCohorts(cohortsFolderPath, atlasConnection)
+importAtlasCohorts(
+  cohortsFolderPath = here::here("inputs/cohorts"),
+  atlasConnection
+)
 }
 \arguments{
 \item{cohortsFolderPath}{Character. Path to cohorts folder in Ulysses repo.}

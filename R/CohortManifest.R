@@ -145,7 +145,7 @@ CohortDef <- R6::R6Class(
     #'
     #' @param cohortType Character. One of 'circe', 'subset', 'union', 'complement'.
     setCohortType = function(cohortType) {
-      checkmate::assert_choice(x = cohortType, choices = c("circe", "subset", "union", "complement"))
+      checkmate::assert_choice(x = cohortType, choices = c("circe", "subset", "union", "complement", "composite"))
       private$.cohortType <- cohortType
     },
 
@@ -1325,11 +1325,11 @@ CohortManifest <- R6::R6Class(
       # Validate this is actually a dependent cohort (not a circe cohort)
       cohort_type <- cohortDef$getCohortType()
       if (cohort_type == "circe") {
-        cli::cli_abort("addDependentCohort only accepts dependent cohorts (subset, union, complement). Got type: {cohort_type}. Use loadCohortManifest() for circe cohorts.")
+        cli::cli_abort("addDependentCohort only accepts dependent cohorts (subset, union, complement, composite). Got type: {cohort_type}. Use loadCohortManifest() for circe cohorts.")
       }
 
-      if (!cohort_type %in% c("subset", "union", "complement")) {
-        cli::cli_abort("Invalid cohort type: {cohort_type}. Must be 'subset', 'union', or 'complement'")
+      if (!cohort_type %in% c("subset", "union", "complement", "composite")) {
+        cli::cli_abort("Invalid cohort type: {cohort_type}. Must be 'subset', 'union', 'composite', or 'complement'")
       }
 
       # Validate parent cohorts exist in this manifest
@@ -1737,7 +1737,9 @@ CohortManifest <- R6::R6Class(
             tempEmulationSchema = temp_schema
           )
         }, silent = TRUE)
-
+        translate_result <- translate_result |>  # Convert CRLF to LF
+          stringr::str_replace_all("\r", "\n")
+          
         if (inherits(translate_result, "try-error")) {
           error_msg <- as.character(translate_result)
           cli::cli_alert_danger("Failed to translate SQL for cohort {cohort_id}: {cohort_label} - {error_msg}")

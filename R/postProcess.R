@@ -491,8 +491,8 @@ validateCohortResults <- function(exportPath = here::here("dissemination/export/
 #'   - filesExported: Comma-separated list of exported file names
 #' @details
 #' The function orchestrates the complete pipeline export:
-#' 1. Validates code state (git commit must be clean)
-#' 2. Validates environment state and snapshots renv.lock
+#' 1. Captures git commit SHA for reproducibility tracking
+#' 2. Snapshots environment (renv.lock) for non-dev versions
 #' 3. Discovers tasks for the specified pipeline version
 #' 4. Merges results across all databases for each task via importAndBind()
 #' 5. Generates reference files: cohortKey.csv, databaseInfo.csv
@@ -514,10 +514,11 @@ validateCohortResults <- function(exportPath = here::here("dissemination/export/
 #'   - filesExported: Comma-separated list of exported file names
 #' @details
 #' The function:
-#' 1. Scans the first database's version folder to discover available tasks
-#' 2. For each task found, calls importAndBind() to merge across databases
-#' 3. Tracks which files were successfully merged
-#' 4. Returns a summary data frame of the merge operation
+#' 1. Captures git commit SHA and (optionally) environment snapshot
+#' 2. Scans the first database's version folder to discover available tasks
+#' 3. For each task found, calls importAndBind() to merge across databases
+#' 4. Generates reference and QC files
+#' 5. Returns a summary data frame of the merge operation
 #'
 #' Expected folder structure:
 #' ```
@@ -542,12 +543,26 @@ orchestratePipelineExport <- function(pipelineVersion, dbIds, resultsPath = here
   
   cli::cli_rule("Orchestrate Pipeline Export for Version {pipelineVersion}")
   
-  # Validate code state before proceeding
-  codeCommitSha <- validateCodeState()
+  # Get code commit SHA for reproducibility metadata
+  codeCommitSha <- tryCatch({
+    log <- gert::git_log()
+    if (nrow(logs) > 0) {
+      return(logs$commit[1])
+    } else {
+      return(NA_character_)
+    }
+  }, error = function(e) {
+    cli::cli_alert_warning("Could not get git commit SHA")
+    return(NA_character_)
+  })
   
-  # Validate environment and snapshot dependencies
-  validateEnvironment()
-  lockfileHash <- snapshotEnvironment(versionLabel = pipelineVersion, savePath = NULL)
+  # Snapshot environment only for non-dev versions
+  if (pipelineVersion != "dev") {
+    lockfileHash <- snapshotEnvironment(versionLabel = pipelineVersion, savePath = NULL)
+  } else {
+    lockfileHash <- "dev-skip"
+    cli::cli_alert_info("Skipping environment snapshot for dev version")
+  }
   
   # Get database names and labels from config
   databaseNames <- purrr::map_chr(dbIds, ~config::get("databaseName", config = .x))

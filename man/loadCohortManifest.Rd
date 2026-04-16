@@ -31,14 +31,19 @@ A CohortManifest R6 object initialized with all cohorts found.
 \description{
 Loads a CohortManifest R6 object by either reading from an existing
 cohortManifest.sqlite database or by scanning the inputs/cohorts directories.
-ExecutionSettings are optional and only required if you plan to generate cohorts
-or retrieve cohort counts. You can load the manifest without them to review metadata.
+When a manifest database exists, automatically discovers any new cohort files
+that have been added to the directories since the manifest was created, allowing
+for incremental cohort development. ExecutionSettings are optional and only
+required if you plan to generate cohorts or retrieve cohort counts. You can load
+the manifest without them to review metadata.
 }
 \details{
 \strong{If database exists:}
 Loads cohort paths and metadata from the cohortManifest.sqlite database,
-verifies files still exist, and checks if any files have changed by comparing
-the stored hash with the current file hash.
+verifies files still exist, checks if any files have changed by comparing
+the stored hash with the current file hash, and then scans the directories
+for any NEW cohort files that have been added since the manifest was created.
+These new files are automatically discovered and added to the manifest.
 
 \strong{If database doesn't exist:}
 Scans \code{cohortsFolderPath/json} and \code{cohortsFolderPath/sql} directories to find cohort

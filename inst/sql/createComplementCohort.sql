@@ -1,13 +1,13 @@
 /*Complement Cohort Template
-Creates a complement cohort- all people in population cohort MINUS people in exclude cohorts
-Parameters-
-  population_cohort_id- The cohort definition ID representing the population
-  exclude_cohort_ids- Comma-separated list of cohort definition IDs to exclude
-  exclude_cohort_ids_count- Number of cohort IDs in exclude_cohort_ids (required for 'exclude_all' rule)
-  complement_type- 'exclude_any' (exclude if in ANY exclude cohort), 'exclude_all' (exclude only if in ALL exclude cohorts)
-  output_cohort_id- The new cohort definition ID for the complement
-  output_table- Schema.table to insert results into
-  base_cohort_table- Schema.table containing the input cohorts
+Creates a complement cohort all people in population cohort MINUS people in exclude cohorts
+Parameters
+  population_cohort_id The cohort definition ID representing the population
+  exclude_cohort_ids Comma-separated list of cohort definition IDs to exclude
+  exclude_cohort_ids_count Number of cohort IDs in exclude_cohort_ids (required for 'exclude_all' rule)
+  complement_type 'exclude_any' (exclude if in ANY exclude cohort), 'exclude_all' (exclude only if in ALL exclude cohorts)
+  output_cohort_id The new cohort definition ID for the complement
+  output_table Schema.table to insert results into
+  base_cohort_table Schema.table containing the input cohorts
 */ 
 
 {DEFAULT @complement_type = 'exclude_any'}
