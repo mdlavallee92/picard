@@ -189,36 +189,39 @@ ConceptSetManifest <- R6::R6Class(
       # Check if database file already exists
       db_exists <- file.exists(dbPath)
 
-      # Create concept set table only if manifest is new
+      conn <- DBI::dbConnect(RSQLite::SQLite(), dbPath)
+
       if (!db_exists) {
-        # Connect to manifest (creates if doesn't exist)
         cli::cat_bullet(
-            glue::glue("Initializing concept set manifest at {dbPath}."), 
+            glue::glue("Initializing concept set manifest at {dbPath}."),
             bullet = "info",
             bullet_col = "blue"
         )
-        conn <- DBI::dbConnect(RSQLite::SQLite(), dbPath)
-        DBI::dbExecute(
-          conn,
-          "CREATE TABLE IF NOT EXISTS concept_set_manifest (
-            id INTEGER PRIMARY KEY,
-            label TEXT NOT NULL,
-            tags TEXT,
-            filePath TEXT NOT NULL,
-            hash TEXT NOT NULL,
-            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'active',
-            deleted_at DATETIME DEFAULT NULL
-          )"
-        )
-        
-        # Run schema migration to add status and deleted_at columns if they don't exist
-        private$migrate_schema(conn)
-        
-        DBI::dbDisconnect(conn)
-      } else {
+      }
+
+      # Create concept set table if it doesn't exist
+      DBI::dbExecute(
+        conn,
+        "CREATE TABLE IF NOT EXISTS concept_set_manifest (
+          id INTEGER PRIMARY KEY,
+          label TEXT NOT NULL,
+          tags TEXT,
+          filePath TEXT NOT NULL,
+          hash TEXT NOT NULL,
+          timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          status TEXT DEFAULT 'active',
+          deleted_at DATETIME DEFAULT NULL
+        )"
+      )
+
+      # Run schema migration to add status and deleted_at columns if they don't exist
+      private$migrate_schema(conn)
+
+      DBI::dbDisconnect(conn)
+
+      if (db_exists) {
         cli::cat_bullet(
-            glue::glue("Concept set manifest already exists at {dbPath}."), 
+            glue::glue("Concept set manifest already exists at {dbPath}."),
             bullet = "warning",
             bullet_col = "yellow"
         )
@@ -470,15 +473,22 @@ ConceptSetManifest <- R6::R6Class(
       private$populate_manifest(conceptSetEntries)
     },
 
-    #' Get the manifest as a data frame
+    #' Get the manifest as a list of ConceptSetDef objects
     #'
-    #' @return Data frame. The manifest with id, label, tags, filePath, hash, and timestamp columns.
+    #' @return List. A list of ConceptSetDef objects in the manifest.
     getManifest = function() {
+      return(private$.manifest)
+    },
+
+    #' Tabulate the manifest as a data frame
+    #'
+    #' @return Data frame. Manifest data with columns: id, label, tags, filePath, hash, timestamp
+    tabulateManifest = function() {
       conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
       on.exit(DBI::dbDisconnect(conn))
       man <- DBI::dbGetQuery(
           conn, "SELECT id, label, tags, filePath, hash, timestamp FROM concept_set_manifest ORDER BY id"
-      ) 
+      )
       return(man)
     },
 
@@ -506,85 +516,25 @@ ConceptSetManifest <- R6::R6Class(
       invisible(self)
     },
 
-    #' Get a specific concept set by ID
+    #' Query concept sets by IDs
     #'
-    #' @param id Integer. The concept set ID.
+    #' @param ids Integer vector. One or more concept set IDs.
     #'
-    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath,  hash, timestamp for the requested concept set.
-    getConceptSetById = function(id) {
-      checkmate::assert_int(x = id)
-
-      concept_set_obj <- NULL
-      for (concept_set in private$.manifest) {
-        if (concept_set$getId() == id) {
-          concept_set_obj <- concept_set
-          break
-        }
-      }
-
-      if (is.null(concept_set_obj)) {
-        stop("Concept set with ID ", id, " not found")
-      }
-
-      # Get timestamp from database
-      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
-      on.exit(DBI::dbDisconnect(conn))
-
-      timestamp_record <- DBI::dbGetQuery(
-        conn,
-        "SELECT timestamp FROM concept_set_manifest WHERE id = ?",
-        list(id)
-      )
-
-      timestamp <- if (nrow(timestamp_record) > 0) {
-        timestamp_record$timestamp[1]
-      } else {
-        NA_character_
-      }
-
-      # Return as data frame
-      data.frame(
-        id = concept_set_obj$getId(),
-        label = concept_set_obj$label,
-        tags = concept_set_obj$formatTagsAsString(),
-        filePath = concept_set_obj$getFilePath(),
-        hash = concept_set_obj$getHash(),
-        timestamp = timestamp,
-        stringsAsFactors = FALSE
-      )
-    },
-
-    #' Get concept sets by tag
-    #'
-    #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
-    #'
-    #' @return Data frame. A subset of the manifest with matching tags, or NULL if none found.
-    getConceptSetsByTag = function(tagString) {
-      checkmate::assert_string(x = tagString, min.chars = 1)
-
-      # Parse the tag string to extract name and value
-      tag_parts <- strsplit(tagString, ":\\s*")[[1]]
-      if (length(tag_parts) != 2) {
-        stop("Tag must be in the format 'name: value'")
-      }
-
-      tag_name <- trimws(tag_parts[1])
-      tag_value <- trimws(tag_parts[2])
+    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching concept sets, or NULL if none found.
+    queryConceptSetsByIds = function(ids) {
+      checkmate::assert_integerish(x = ids, min.len = 1)
+      ids <- as.integer(ids)
 
       matching_concept_sets <- list()
 
-      # Search through manifest for matching tags
       for (concept_set in private$.manifest) {
-        cs_tags <- concept_set$tags
-        if (!is.null(cs_tags) && tag_name %in% names(cs_tags)) {
-          if (cs_tags[[tag_name]] == tag_value) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
-          }
+        if (concept_set$getId() %in% ids) {
+          matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
         }
       }
 
       if (length(matching_concept_sets) == 0) {
-        cli::cli_alert_warning("No concept sets found with tag '{tag_name}: {tag_value}'")
+        cli::cli_alert_warning("No concept sets found with IDs: {paste(ids, collapse = ', ')}")
         return(NULL)
       }
 
@@ -630,37 +580,128 @@ ConceptSetManifest <- R6::R6Class(
       return(manifest_df)
     },
 
-    #' Get concept sets by label
+    #' Query concept sets by tag
     #'
-    #' @param label Character. The label to search for.
-    #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
-    #'   Defaults to "exact".
+    #' @param tagStrings Character vector. One or more tags in the format "name: value"
+    #'   (e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+    #'   argument controls whether a concept set must satisfy any or all of them.
+    #' @param match Character. "any" (default) returns concept sets matching at least one tag;
+    #'   "all" returns only concept sets matching every tag.
     #'
-    #' @return Data frame. A subset of the manifest with matching labels, or NULL if none found.
-    getConceptSetsByLabel = function(label, matchType = c("exact", "pattern")) {
-      checkmate::assert_string(x = label, min.chars = 1)
-      matchType <- match.arg(matchType)
+    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching concept sets, or NULL if none found.
+    queryConceptSetsByTag = function(tagStrings, match = c("any", "all")) {
+      checkmate::assert_character(x = tagStrings, min.len = 1, min.chars = 1)
+      match <- match.arg(match)
+
+      # Parse each tag string into name/value pairs
+      parsed_tags <- lapply(tagStrings, function(ts) {
+        tag_parts <- strsplit(ts, ":\\s*")[[1]]
+        if (length(tag_parts) != 2) {
+          cli::cli_abort("Tag must be in the format 'name: value': {ts}")
+        }
+        list(name = trimws(tag_parts[1]), value = trimws(tag_parts[2]))
+      })
 
       matching_concept_sets <- list()
 
-      # Search through manifest for matching labels
+      # Search through manifest for matching tags
       for (concept_set in private$.manifest) {
-        cs_label <- concept_set$label
-        
-        if (matchType == "exact") {
-          if (cs_label == label) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
-          }
-        } else if (matchType == "pattern") {
-          # Use grepl for pattern matching (case-insensitive)
-          if (grepl(label, cs_label, ignore.case = TRUE)) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
-          }
+        cs_tags <- concept_set$tags
+        tag_hits <- sapply(parsed_tags, function(pt) {
+          !is.null(cs_tags) &&
+            pt$name %in% names(cs_tags) &&
+            cs_tags[[pt$name]] == pt$value
+        })
+
+        include <- if (match == "any") any(tag_hits) else all(tag_hits)
+
+        if (include) {
+          matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
         }
       }
 
       if (length(matching_concept_sets) == 0) {
-        cli::cli_alert_warning("No concept sets found with {matchType} label match '{label}'")
+        match_desc <- paste(tagStrings, collapse = " | ")
+        cli::cli_alert_warning("No concept sets found matching ({match}): {match_desc}")
+        return(NULL)
+      }
+
+      # Convert matching concept sets to data frame
+      manifest_df <- data.frame(
+        id = integer(),
+        label = character(),
+        tags = character(),
+        filePath = character(),
+        hash = character(),
+        timestamp = character(),
+        stringsAsFactors = FALSE
+      )
+
+      for (concept_set in matching_concept_sets) {
+        manifest_df <- rbind(manifest_df, data.frame(
+          id = concept_set$getId(),
+          label = concept_set$label,
+          tags = concept_set$formatTagsAsString(),
+          filePath = concept_set$getFilePath(),
+          hash = concept_set$getHash(),
+          timestamp = NA_character_,
+          stringsAsFactors = FALSE
+        ))
+      }
+
+      # Get timestamps from database
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+
+      for (i in seq_len(nrow(manifest_df))) {
+        cs_id <- manifest_df$id[i]
+        timestamp_record <- DBI::dbGetQuery(
+          conn,
+          "SELECT timestamp FROM concept_set_manifest WHERE id = ?",
+          list(cs_id)
+        )
+        if (nrow(timestamp_record) > 0) {
+          manifest_df$timestamp[i] <- timestamp_record$timestamp[1]
+        }
+      }
+
+      return(manifest_df)
+    },
+
+    #' Query concept sets by label
+    #'
+    #' @param labels Character vector. One or more labels to search for.
+    #'   A concept set is included when it matches at least one of the supplied labels (OR logic).
+    #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
+    #'   Defaults to "exact".
+    #'
+    #' @return Data frame. A subset of the manifest with columns id, label, tags, filePath, hash, timestamp for matching concept sets, or NULL if none found.
+    queryConceptSetsByLabel = function(labels, matchType = c("exact", "pattern")) {
+      checkmate::assert_character(x = labels, min.len = 1, min.chars = 1)
+      matchType <- match.arg(matchType)
+
+      matching_concept_sets <- list()
+
+      # Search through manifest for matching labels (any-match across supplied labels)
+      for (concept_set in private$.manifest) {
+        cs_label <- concept_set$label
+
+        label_hits <- sapply(labels, function(lbl) {
+          if (matchType == "exact") {
+            cs_label == lbl
+          } else {
+            grepl(lbl, cs_label, ignore.case = TRUE)
+          }
+        })
+
+        if (any(label_hits)) {
+          matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
+        }
+      }
+
+      if (length(matching_concept_sets) == 0) {
+        match_desc <- paste(labels, collapse = " | ")
+        cli::cli_alert_warning("No concept sets found with {matchType} label match: {match_desc}")
         return(NULL)
       }
 
@@ -713,12 +754,12 @@ ConceptSetManifest <- R6::R6Class(
       length(private$.manifest)
     },
 
-    #' Grab a specific concept set by ID
+    #' Get a specific concept set by ID
     #'
     #' @param id Integer. The concept set ID.
     #'
     #' @return ConceptSetDef. The ConceptSetDef object with matching ID, or NULL if not found.
-    grabConceptSetById = function(id) {
+    getConceptSetById = function(id) {
       checkmate::assert_int(x = id)
 
       for (concept_set in private$.manifest) {
@@ -731,74 +772,89 @@ ConceptSetManifest <- R6::R6Class(
       return(NULL)
     },
 
-    #' Grab concept sets by tag
+    #' Get concept sets by tag
     #'
-    #' @param tagString Character. A tag in the format "name: value" (e.g., "category: primary").
+    #' @param tagStrings Character vector. One or more tags in the format "name: value"
+    #'   (e.g., "category: primary"). When multiple tags are supplied, the \code{match}
+    #'   argument controls whether a concept set must satisfy any or all of them.
+    #' @param match Character. "any" (default) returns concept sets matching at least one tag;
+    #'   "all" returns only concept sets matching every tag.
     #'
     #' @return List. A list of ConceptSetDef objects with matching tags, or NULL if none found.
-    grabConceptSetsByTag = function(tagString) {
-      checkmate::assert_string(x = tagString, min.chars = 1)
+    getConceptSetsByTag = function(tagStrings, match = c("any", "all")) {
+      checkmate::assert_character(x = tagStrings, min.len = 1, min.chars = 1)
+      match <- match.arg(match)
 
-      # Parse the tag string to extract name and value
-      tag_parts <- strsplit(tagString, ":\\s*")[[1]]
-      if (length(tag_parts) != 2) {
-        stop("Tag must be in the format 'name: value'")
-      }
-
-      tag_name <- trimws(tag_parts[1])
-      tag_value <- trimws(tag_parts[2])
+      # Parse each tag string into name/value pairs
+      parsed_tags <- lapply(tagStrings, function(ts) {
+        tag_parts <- strsplit(ts, ":\\s*")[[1]]
+        if (length(tag_parts) != 2) {
+          cli::cli_abort("Tag must be in the format 'name: value': {ts}")
+        }
+        list(name = trimws(tag_parts[1]), value = trimws(tag_parts[2]))
+      })
 
       matching_concept_sets <- list()
 
       # Search through manifest for matching tags
       for (concept_set in private$.manifest) {
         cs_tags <- concept_set$tags
-        if (!is.null(cs_tags) && tag_name %in% names(cs_tags)) {
-          if (cs_tags[[tag_name]] == tag_value) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
-          }
+        tag_hits <- sapply(parsed_tags, function(pt) {
+          !is.null(cs_tags) &&
+            pt$name %in% names(cs_tags) &&
+            cs_tags[[pt$name]] == pt$value
+        })
+
+        include <- if (match == "any") any(tag_hits) else all(tag_hits)
+
+        if (include) {
+          matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
         }
       }
 
       if (length(matching_concept_sets) == 0) {
-        cli::cli_alert_warning("No concept sets found with tag '{tag_name}: {tag_value}'")
+        match_desc <- paste(tagStrings, collapse = " | ")
+        cli::cli_alert_warning("No concept sets found matching ({match}): {match_desc}")
         return(NULL)
       }
 
       return(matching_concept_sets)
     },
 
-    #' Grab concept sets by label
+    #' Get concept sets by label
     #'
-    #' @param label Character. The label to search for.
+    #' @param labels Character vector. One or more labels to search for.
+    #'   A concept set is included when it matches at least one of the supplied labels (OR logic).
     #' @param matchType Character. Either "exact" for exact match or "pattern" for pattern matching.
     #'   Defaults to "exact".
     #'
     #' @return List. A list of ConceptSetDef objects with matching labels, or NULL if none found.
-    grabConceptSetsByLabel = function(label, matchType = c("exact", "pattern")) {
-      checkmate::assert_string(x = label, min.chars = 1)
+    getConceptSetsByLabel = function(labels, matchType = c("exact", "pattern")) {
+      checkmate::assert_character(x = labels, min.len = 1, min.chars = 1)
       matchType <- match.arg(matchType)
 
       matching_concept_sets <- list()
 
-      # Search through manifest for matching labels
+      # Search through manifest for matching labels (any-match across supplied labels)
       for (concept_set in private$.manifest) {
         cs_label <- concept_set$label
 
-        if (matchType == "exact") {
-          if (cs_label == label) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
+        label_hits <- sapply(labels, function(lbl) {
+          if (matchType == "exact") {
+            cs_label == lbl
+          } else {
+            grepl(lbl, cs_label, ignore.case = TRUE)
           }
-        } else if (matchType == "pattern") {
-          # Use grepl for pattern matching (case-insensitive)
-          if (grepl(label, cs_label, ignore.case = TRUE)) {
-            matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
-          }
+        })
+
+        if (any(label_hits)) {
+          matching_concept_sets[[length(matching_concept_sets) + 1]] <- concept_set
         }
       }
 
       if (length(matching_concept_sets) == 0) {
-        cli::cli_alert_warning("No concept sets found with {matchType} label match '{label}'")
+        match_desc <- paste(labels, collapse = " | ")
+        cli::cli_alert_warning("No concept sets found with {matchType} label match: {match_desc}")
         return(NULL)
       }
 
@@ -922,14 +978,21 @@ ConceptSetManifest <- R6::R6Class(
       })
     },
 
-    #' @description Hard delete a concept set (removes the record from database, irreversible)
+    #' @description Permanently delete a concept set (removes the record from database, irreversible)
     #'
     #' @param id Integer. The concept set ID to permanently remove.
+    #' @param confirm Logical. Must be TRUE to proceed; prevents accidental deletion. Defaults to FALSE.
     #'
     #' @return Invisibly returns TRUE if successful, FALSE otherwise.
-    hardRemoveConceptSet = function(id) {
+    permanentlyDeleteConceptSet = function(id, confirm = FALSE) {
       checkmate::assert_int(id)
-      
+
+      if (!isTRUE(confirm)) {
+        cli::cli_abort(
+          "permanentlyDeleteConceptSet() is irreversible. Set confirm = TRUE to proceed."
+        )
+      }
+
       conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
       on.exit(DBI::dbDisconnect(conn))
       
@@ -992,7 +1055,7 @@ ConceptSetManifest <- R6::R6Class(
         if (keep_trace) {
           self$deleteConceptSet(cs_id, reason = "missing file")
         } else {
-          self$hardRemoveConceptSet(cs_id)
+          self$permanentlyDeleteConceptSet(cs_id, confirm = TRUE)
         }
       }
       
@@ -1000,6 +1063,163 @@ ConceptSetManifest <- R6::R6Class(
       cli::cli_alert_success("Cleanup complete: {nrow(missing_conceptsets)} concept set(s) {cleanup_method}")
       
       return(invisible(NULL))
+    },
+
+    #' Sync the manifest against concept set files on disk
+    #'
+    #' @description
+    #' Scans the \code{json/} subdirectory of the concept sets folder, reconciles it against
+    #' the SQLite manifest, and updates both the database and the in-memory list:
+    #' \itemize{
+    #'   \item New files found on disk are added (new ConceptSetDef + manifest entry).
+    #'   \item Active manifest records whose file no longer exists are soft-deleted.
+    #'   \item Existing files whose JSON hash has changed are updated in the manifest.
+    #' }
+    #'
+    #' @return Data frame with columns: id, label, action
+    #'   (\code{"added"}, \code{"hash_updated"}, \code{"missing_flagged"}, or \code{"unchanged"}).
+    syncManifest = function() {
+      concept_sets_folder <- dirname(private$.dbPath)
+      json_dir <- file.path(concept_sets_folder, "json")
+
+      # Collect all JSON files currently on disk
+      on_disk <- c()
+
+      if (dir.exists(json_dir)) {
+        on_disk <- c(on_disk, list.files(json_dir, pattern = "\\.json$",
+                                         full.names = TRUE, recursive = TRUE))
+      }
+
+      on_disk_rel <- fs::path_rel(on_disk)
+
+      # Pull current records from the SQLite manifest
+      conn <- DBI::dbConnect(RSQLite::SQLite(), private$.dbPath)
+      on.exit(DBI::dbDisconnect(conn))
+
+      db_records <- DBI::dbGetQuery(
+        conn,
+        "SELECT id, label, tags, filePath, hash, status
+         FROM concept_set_manifest"
+      )
+
+      results <- data.frame(
+        id     = integer(),
+        label  = character(),
+        action = character(),
+        stringsAsFactors = FALSE
+      )
+
+      cli::cli_rule("Syncing Concept Set Manifest")
+
+      # ── Step 1: check files already in the manifest ──────────────────────────
+      for (i in seq_len(nrow(db_records))) {
+        rec        <- db_records[i, ]
+        rec_id     <- rec$id
+        rec_label  <- rec$label
+        rec_status <- rec$status
+        file_path  <- rec$filePath
+
+        if (rec_status == "active" && !file.exists(file_path)) {
+          # File has gone missing — soft-delete
+          DBI::dbExecute(
+            conn,
+            "UPDATE concept_set_manifest SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+            list(rec_id)
+          )
+          # Remove from in-memory list
+          private$.manifest <- Filter(function(cs) cs$getId() != rec_id, private$.manifest)
+          cli::cli_alert_warning("Missing: {rec_label} (ID {rec_id}) — soft-deleted")
+          results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                               action = "missing_flagged", stringsAsFactors = FALSE))
+          next
+        }
+
+        if (!file.exists(file_path)) {
+          next  # already deleted/purged record with missing file — skip
+        }
+
+        # Recompute hash and compare
+        tryCatch({
+          tmp_def <- ConceptSetDef$new(label = rec_label, tags = list(), filePath = file_path)
+          new_hash <- tmp_def$getHash()
+
+          if (new_hash != rec$hash) {
+            DBI::dbExecute(
+              conn,
+              "UPDATE concept_set_manifest SET hash = ?, timestamp = CURRENT_TIMESTAMP WHERE id = ?",
+              list(new_hash, rec_id)
+            )
+            # Update in-memory entry if present
+            idx <- which(sapply(private$.manifest, function(cs) cs$getId() == rec_id))
+
+            if (length(idx) > 0) {
+              tmp_def$setId(as.integer(rec_id))
+
+              if (!is.na(rec$tags) && rec$tags != "") {
+                tmp_def$tags <- picard::parseTagsString(rec$tags)
+              }
+
+              private$.manifest[[idx]] <- tmp_def
+            }
+
+            cli::cli_alert_warning("Hash updated: {rec_label} (ID {rec_id})")
+            results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                                 action = "hash_updated", stringsAsFactors = FALSE))
+          } else {
+            results <- rbind(results, data.frame(id = rec_id, label = rec_label,
+                                                 action = "unchanged", stringsAsFactors = FALSE))
+          }
+        }, error = function(e) {
+          cli::cli_alert_danger("Error checking {rec_label}: {e$message}")
+        })
+      }
+
+      # ── Step 2: discover new files not yet in the manifest ───────────────────
+      existing_rel <- db_records$filePath  # stored as relative paths
+      new_files    <- on_disk[!(on_disk_rel %in% existing_rel)]
+
+      if (length(new_files) > 0) {
+        cli::cli_alert_info("Found {length(new_files)} new concept set file(s)")
+      }
+
+      for (file_path in new_files) {
+        label <- tools::file_path_sans_ext(basename(file_path))
+        tryCatch({
+          new_def <- ConceptSetDef$new(label = label, tags = list(), filePath = file_path)
+
+          # Determine next ID
+          max_id_result <- DBI::dbGetQuery(conn, "SELECT MAX(id) as max_id FROM concept_set_manifest")
+          max_id  <- ifelse(!is.na(max_id_result$max_id[1]), max_id_result$max_id[1], 0)
+          next_id <- as.integer(max_id + 1)
+          new_def$setId(next_id)
+
+          DBI::dbExecute(
+            conn,
+            "INSERT INTO concept_set_manifest (id, label, tags, filePath, hash, timestamp, status)
+             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'active')",
+            list(next_id, label, "", new_def$getFilePath(), new_def$getHash())
+          )
+
+          private$.manifest[[length(private$.manifest) + 1]] <- new_def
+          cli::cli_alert_success("Added: {label} (ID {next_id})")
+          results <- rbind(results, data.frame(id = next_id, label = label,
+                                               action = "added", stringsAsFactors = FALSE))
+        }, error = function(e) {
+          cli::cli_alert_danger("Error adding {label}: {e$message}")
+        })
+      }
+
+      # ── Summary ──────────────────────────────────────────────────────────────
+      n_added   <- sum(results$action == "added")
+      n_updated <- sum(results$action == "hash_updated")
+      n_missing <- sum(results$action == "missing_flagged")
+      n_same    <- sum(results$action == "unchanged")
+      cli::cli_rule()
+      cli::cli_alert_success(
+        "Sync complete — Added: {n_added} | Updated: {n_updated} | Missing: {n_missing} | Unchanged: {n_same}"
+      )
+
+      return(results)
     },
 
     #' Extract Source Codes for Concept Sets

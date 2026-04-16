@@ -473,15 +473,12 @@ csm <- loadConceptSetManifest()
 Examine concept sets in your study:
 
 ```{r eval = FALSE}
-# View all concept sets
-manifest_df <- csm$getManifest()
+# Tabular view of all concept sets
+manifest_df <- csm$tabulateManifest()
 
-# Get formatted summary
-summary_df <- csm$tabulateManifest()
-
-# Query by criteria
-concept_set <- csm$getConceptSetById(id = 1)
-drug_expo <- csm$getConceptSetsByTag(tagString = "domain: drug_exposure")
+# Query by criteria (returns data frames)
+concept_set <- csm$queryConceptSetsByIds(1L)
+drug_expo <- csm$queryConceptSetsByTag(tagStrings = "domain: drug_exposure")
 ```
 
 ### Step 5: Apply Functions for Concept Set Operations

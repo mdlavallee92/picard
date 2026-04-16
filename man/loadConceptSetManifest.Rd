@@ -50,9 +50,12 @@ The conceptSetsLoad.csv file (optional) should contain:
 \strong{Post-Load:}
 After loading, use manifest methods to query concept sets:
 \itemize{
-\item \code{getConceptSetById(id)} - Get by database ID
-\item \code{getConceptSetsByTag(key, value)} - Get by metadata tag
-\item \code{grabConceptSetById(id)} - Get ConceptSetDef object
+\item \code{queryConceptSetsByIds(ids)} - Query by one or more IDs; returns data frame
+\item \code{queryConceptSetsByTag(tagStrings, match)} - Query by tag(s); returns data frame
+\item \code{queryConceptSetsByLabel(labels, matchType)} - Query by label(s); returns data frame
+\item \code{getConceptSetById(id)} - Get ConceptSetDef object by ID
+\item \code{getConceptSetsByTag(tagStrings, match)} - Get ConceptSetDef objects by tag(s)
+\item \code{tabulateManifest()} - Tabular view of all concept sets
 }
 }
 \examples{

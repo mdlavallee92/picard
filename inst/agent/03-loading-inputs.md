@@ -364,10 +364,10 @@ importAtlasConceptSets(
 csm <- loadConceptSetManifest()
 
 # View manifest
-manifest_df <- csm$getManifest()
+manifest_df <- csm$tabulateManifest()
 
 # Query by concept
-malaria_concepts <- csm$getConceptSetById(id = 1)
+malaria_concepts <- csm$queryConceptSetsByIds(1L)
 ```
 
 ---
