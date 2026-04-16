@@ -1,15 +1,198 @@
+SubsetWindowOperator <- R6::R6Class(
+  classname = "SubsetWindowOperator",
+  private = list(
+    .windowType = NULL,
+    .subsetCohortWindowAnchor = NULL,
+    .startDays = NULL,
+    .endDays = NULL,
+    .baseCohortWindowAnchor = NULL
+  ),
+  public = list(
+    initialize = function(
+      windowType,
+      subsetCohortWindowAnchor,
+      startDays,
+      endDays,
+      baseCohortWindowAnchor
+    ) {
+      # check inputs are valid
+      checkmate::assert_choice(x = windowType, choices = c("startWindow", "endWindow"))
+      checkmate::assert_choice(x = subsetCohortWindowAnchor, choices = c("cohort_start_date", "cohort_end_date"))
+      checkmate::assert_integerish(x = startDays, len = 1)
+      checkmate::assert_integerish(x = endDays, len = 1)
+      checkmate::assert_choice(x = baseCohortWindowAnchor, choices = c("cohort_start_date", "cohort_end_date"))
+
+      # assign to private fields
+      private$.windowType <- windowType
+      private$.subsetCohortWindowAnchor <- subsetCohortWindowAnchor
+      private$.startDays <- startDays
+      private$.endDays <- endDays
+      private$.baseCohortWindowAnchor <- baseCohortWindowAnchor
+
+    },
+
+    makeSubsetWindowSql = function() {
+      start_anchor <- private$.subsetCohortWindowAnchor
+      start_day <- private$.startDays
+      end_day <- private$.endDays
+      window_anchor <- private$.baseCohortWindowAnchor
+      sql <- glue::glue(
+        "AND (fc.{start_anchor} >= DATEADD(day,{start_day}, bc.{window_anchor}) AND fc.{start_anchor} <= DATEADD(d, {end_day}, bc.{window_anchor}))"
+      )
+      return(sql)
+    }
+
+  ),
+  active = list(
+    windowType = function(value) {
+      if (missing(value)) {
+        private$.windowType
+      } else {
+        checkmate::assert_choice(x = value, choices = c("startWindow", "endWindow"))
+        private$.windowType <- value
+      }
+    },
+    subsetCohortWindowAnchor = function(value) {
+      if (missing(value)) {
+        private$.subsetCohortWindowAnchor
+      } else {
+        checkmate::assert_choice(x = value, choices = c("cohort_start_date", "cohort_end_date"))
+        private$.subsetCohortWindowAnchor <- value
+      }
+    },
+    startDays = function(value) {
+      if (missing(value)) {
+        private$.startDays
+      } else {
+        checkmate::assert_integerish(x = value, len = 1)
+        private$.startDays <- value
+      }
+    },
+    endDays = function(value) {
+      if (missing(value)) {
+        private$.endDays
+      } else {
+        checkmate::assert_integerish(x = value, len = 1)
+        private$.endDays <- value
+      }
+    },
+    baseCohortWindowAnchor = function(value) {
+      if (missing(value)) {
+        private$.baseCohortWindowAnchor
+      } else {
+        checkmate::assert_choice(x = value, choices = c("cohort_start_date", "cohort_end_date"))
+        private$.baseCohortWindowAnchor <- value
+      }
+    }
+  )
+)
+
+#' Create a Subset Start Window Operator
+#'
+#' @description
+#' Convenience wrapper to create a SubsetWindowOperator for defining the temporal window
+#' for a subset cohort's start date relative to the filter cohort event.
+#'
+#' @param subsetCohortWindowAnchor Character. Whether to anchor to the filter cohort's
+#'   'cohort_start_date' or 'cohort_end_date'. Determines which date from the filter
+#'   cohort event is used as the reference point.
+#' @param startDays Integer. The number of days from the base cohort anchor to the start
+#'   of the window. Negative values indicate days before the base cohort date.
+#' @param endDays Integer. The number of days from the base cohort anchor to the end
+#'   of the window. Negative values indicate days before the base cohort date.
+#' @param baseCohortWindowAnchor Character. Whether to anchor the window to the base cohort's
+#'   'cohort_start_date' or 'cohort_end_date'. Default: 'cohort_start_date'.
+#'
+#' @return A SubsetWindowOperator object configured for start window filtering.
+#'
+#' @examples
+#' # Create a start window: filter cohort must start within 365 days before to 0 days
+#' # after the base cohort start date
+#' start_w <- createSubsetStartWindow(
+#'   subsetCohortWindowAnchor = "cohort_start_date",
+#'   startDays = -365,
+#'   endDays = 0,
+#'   baseCohortWindowAnchor = "cohort_start_date"
+#' )
+#'
+#' @export
+createSubsetStartWindow <- function(
+    subsetCohortWindowAnchor,
+    startDays,
+    endDays,
+    baseCohortWindowAnchor = "cohort_start_date") {
+
+  SubsetWindowOperator$new(
+    windowType = "startWindow",
+    subsetCohortWindowAnchor = subsetCohortWindowAnchor,
+    startDays = startDays,
+    endDays = endDays,
+    baseCohortWindowAnchor = baseCohortWindowAnchor
+  )
+}
+
+#' Create a Subset End Window Operator
+#'
+#' @description
+#' Convenience wrapper to create a SubsetWindowOperator for defining the temporal window
+#' for a subset cohort's end date relative to the filter cohort event.
+#'
+#' @param subsetCohortWindowAnchor Character. Whether to anchor to the filter cohort's
+#'   'cohort_start_date' or 'cohort_end_date'. Determines which date from the filter
+#'   cohort event is used as the reference point.
+#' @param startDays Integer. The number of days from the base cohort anchor to the start
+#'   of the window. Negative values indicate days before the base cohort date.
+#' @param endDays Integer. The number of days from the base cohort anchor to the end
+#'   of the window. Negative values indicate days before the base cohort date.
+#' @param baseCohortWindowAnchor Character. Whether to anchor the window to the base cohort's
+#'   'cohort_start_date' or 'cohort_end_date'. Default: 'cohort_end_date'.
+#'
+#' @return A SubsetWindowOperator object configured for end window filtering.
+#'
+#' @examples
+#' # Create an end window: filter cohort must end within 0 to 90 days
+#' # after the base cohort end date
+#' end_w <- createSubsetEndWindow(
+#'   subsetCohortWindowAnchor = "cohort_end_date",
+#'   startDays = 0,
+#'   endDays = 90,
+#'   baseCohortWindowAnchor = "cohort_end_date"
+#' )
+#'
+#' @export
+createSubsetEndWindow <- function(
+    subsetCohortWindowAnchor,
+    startDays,
+    endDays,
+    baseCohortWindowAnchor = "cohort_end_date") {
+
+  SubsetWindowOperator$new(
+    windowType = "endWindow",
+    subsetCohortWindowAnchor = subsetCohortWindowAnchor,
+    startDays = startDays,
+    endDays = endDays,
+    baseCohortWindowAnchor = baseCohortWindowAnchor
+  )
+}
+
 #' Build a Subset Cohort Definition (Temporal)
 #'
 #' @description
 #' Creates a SQL file and metadata for a subset cohort based on temporal filtering
 #' between two cohorts. Returns a CohortDef object ready to add to a CohortManifest.
 #'
-#' @param label Character. User-friendly name for the subset (e.g., "CKD with T2D prior")
+#' @param label Character. User-friendly name for the subset (e.g., "CKD with T2D prior").
 #' @param baseCohortId Integer. The cohort ID to subset.
 #' @param filterCohortId Integer. The cohort ID to use for temporal filtering.
-#' @param temporalOperator Character. One of 'during', 'before', 'after', 'overlapping'. Default: 'during'
-#' @param temporalStartOffset Integer. Window start relative to base cohort (negative = before). Default: 0
-#' @param temporalEndOffset Integer. Window end relative to base cohort. Default: 0
+#' @param startWindow SubsetWindowOperator object. Defines the temporal window for the subset cohort start date
+#'   relative to the filter cohort event.
+#' @param endWindow SubsetWindowOperator object (optional, NULL allowed). Defines the temporal window for the 
+#'   subset cohort end date relative to the filter cohort event. If NULL, the filter cohort end date is not used.
+#' @param endDateType Character. Whether to use the base cohort end date ('base') or filter cohort end date ('filter')
+#'   as the cohort end date in the output subset cohort. Default: 'base'.
+#' @param subsetLimit Character. One of 'First', 'Last', or 'All'. Specifies which qualifying filter cohort event(s)
+#'   to retain per subject. 'First' keeps the earliest event, 'Last' keeps the most recent event, 'All' keeps all 
+#'   qualifying events. Default: 'First'.
 #' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
 #' @param manifest CohortManifest object (optional). If provided, validates that base cohorts exist.
 #'   Recommended to ensure referential integrity. If NULL, a warning is issued.
@@ -22,24 +205,49 @@
 #'
 #' @return A CohortDef object with cohortType='subset' and dependencies set.
 #'
+#' @examples
+#' # Create subset: Chronic Kidney Disease patients with a Type 2 Diabetes diagnosis
+#' # in the 365 days before or after their CKD start date
+#'
+#' # Define window for start date: T2D diagnosis must occur within 365 days before to 0 days after CKD start
+#' start_window <- createSubsetStartWindow(
+#'   subsetCohortWindowAnchor = "cohort_start_date",
+#'   startDays = -365,
+#'   endDays = 0,
+#'   baseCohortWindowAnchor = "cohort_start_date"
+#' )
+#'
+#' # Create the subset cohort: keep first T2D event per patient
+#' ckd_with_t2d <- buildSubsetCohortTemporal(
+#'   label = "CKD with recent T2D",
+#'   baseCohortId = 101,
+#'   filterCohortId = 102,
+#'   startWindow = start_window,
+#'   endWindow = NULL,
+#'   endDateType = "base",
+#'   subsetLimit = "First"
+#' )
+#'
 #' @export
 buildSubsetCohortTemporal <- function(
     label,
     baseCohortId,
     filterCohortId,
-    temporalOperator = "during",
-    temporalStartOffset = 0L,
-    temporalEndOffset = 0L,
-    cohortsDirectory = NULL,
+    startWindow,
+    endWindow,
+    endDateType = "base", 
+    subsetLimit = "First",
+    cohortsFolder = here::here("inputs/cohorts"),
     manifest = NULL) {
 
   # Validation
   checkmate::assert_string(x = label, min.chars = 1)
   checkmate::assert_integerish(x = baseCohortId, len = 1, lower = 1)
   checkmate::assert_integerish(x = filterCohortId, len = 1, lower = 1)
-  checkmate::assert_choice(x = temporalOperator, choices = c("during", "before", "after", "overlapping"))
-  checkmate::assert_integerish(x = temporalStartOffset, len = 1)
-  checkmate::assert_integerish(x = temporalEndOffset, len = 1)
+  checkmate::assert_choice(x = endDateType, choices = c("base", "filter"))
+  checkmate::assert_choice(x = subsetLimit, choices = c("First", "All", "Last"))
+  checkmate::assert_class(x = startWindow, classes = "SubsetWindowOperator")
+  checkmate::assert_class(x = endWindow, classes = "SubsetWindowOperator", null.ok = TRUE)
   checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
 
   # Warn if manifest not provided
@@ -60,13 +268,8 @@ buildSubsetCohortTemporal <- function(
     }
   }
 
-  # Set default cohorts directory
-  if (is.null(cohortsDirectory)) {
-    cohortsDirectory <- file.path(getwd(), "inputs", "cohorts")
-  }
-
   # Create derived/subset directory if it doesn't exist
-  subset_dir <- file.path(cohortsDirectory, "derived", "subset")
+  subset_dir <- file.path(cohortsFolder, "derived", "subset")
   if (!dir.exists(subset_dir)) {
     dir.create(subset_dir, recursive = TRUE, showWarnings = FALSE)
   }
@@ -82,28 +285,65 @@ buildSubsetCohortTemporal <- function(
     "createSubsetCohort_Cohort.sql",
     package = "picard"
   )
-  template_sql <- readr::read_file(template_path)
+  
+  # get winow SQL from SubsetWindowOperator objects
+  start_window <- startWindow$makeSubsetWindowSql()
+  if (is.null(endWindow)) {
+    end_window <- ""
+  } else {
+    end_window <- endWindow$makeSubsetWindowSql()
+  }
+
+  template_sql <- readr::read_file(template_path) |>
+  SqlRender::render(
+    base_cohort_id = baseCohortId,
+    filter_cohort_id = filterCohortId,
+    start_window = start_window,
+    end_window = end_window,
+    subset_limit = subsetLimit,
+    end_date_type = endDateType
+  )
 
   # Prepare metadata
+  if (is.null(endWindow)) {
+    endWindowMeta <- list(
+      subsetCohortWindowAnchor = NA_character_,
+      startDays = NA_integer_,
+      endDays = NA_integer_,
+      baseCohortWindowAnchor = NA_character_
+    )
+  } else {
+    endWindowMeta <- list(
+      subsetCohortWindowAnchor = endWindow$subsetCohortWindowAnchor,
+      startDays = endWindow$startDays,
+      endDays = endWindow$endDays,
+      baseCohortWindowAnchor = endWindow$baseCohortWindowAnchor
+    )
+  }
   metadata <- list(
     type = "subset_temporal",
     label = label,
     baseCohortId = baseCohortId,
     filterCohortId = filterCohortId,
-    temporalOperator = temporalOperator,
-    temporalStartOffset = temporalStartOffset,
-    temporalEndOffset = temporalEndOffset,
+    startWindow = list(
+      subsetCohortWindowAnchor = startWindow$subsetCohortWindowAnchor,
+      startDays = startWindow$startDays,
+      endDays = startWindow$endDays,
+      baseCohortWindowAnchor = startWindow$baseCohortWindowAnchor
+    ),
+    endWindow = endWindowMeta,
+    subsetLimit = subsetLimit,
+    endDateType = endDateType,
     createdAt = Sys.time(),
     dependsOnCohortIds = c(baseCohortId, filterCohortId)
   )
 
-  # Write SQL template to file (will be rendered at execution time)
+  # Write SQL template to file
   writeLines(template_sql, con = sql_path)
+  cli::cli_alert_success("Created composite cohort SQL: {fs::path_rel(sql_path)}")
 
   # Write metadata JSON
   jsonlite::write_json(metadata, path = metadata_path, pretty = TRUE, auto_unbox = TRUE)
-
-  cli::cli_alert_success("Created subset cohort SQL: {fs::path_rel(sql_path)}")
   cli::cli_alert_success("Created metadata file: {fs::path_rel(metadata_path)}")
 
   # Create and return CohortDef object
@@ -112,8 +352,7 @@ buildSubsetCohortTemporal <- function(
     tags = list(
       type = "subset",
       baseCohortId = as.character(baseCohortId),
-      filterCohortId = as.character(filterCohortId),
-      temporalOperator = temporalOperator
+      filterCohortId = as.character(filterCohortId)
     ),
     filePath = sql_path
   )
@@ -123,10 +362,7 @@ buildSubsetCohortTemporal <- function(
   cohort_def$setDependencies(
     dependsOnCohortIds = c(baseCohortId, filterCohortId),
     dependencyRule = list(
-      type = "temporal",
-      operator = temporalOperator,
-      startOffset = temporalStartOffset,
-      endOffset = temporalEndOffset
+      type = "temporal"
     )
   )
 
@@ -168,7 +404,7 @@ buildSubsetCohortDemographic <- function(
     genderConceptIds = NULL,
     raceConceptIds = NULL,
     ethnicityConceptIds = NULL,
-    cohortsDirectory = NULL,
+    ccohortsFolder = here::here("inputs/cohorts"),
     manifest = NULL) {
 
   # Validation
@@ -196,13 +432,8 @@ buildSubsetCohortDemographic <- function(
     }
   }
 
-  # Set default cohorts directory
-  if (is.null(cohortsDirectory)) {
-    cohortsDirectory <- file.path(getwd(), "inputs", "cohorts")
-  }
-
   # Create derived/subset_demo directory if it doesn't exist
-  subset_dir <- file.path(cohortsDirectory, "derived", "subset_demo")
+  subset_dir <- file.path(cohortsFolder, "derived", "subset_demo")
   if (!dir.exists(subset_dir)) {
     dir.create(subset_dir, recursive = TRUE, showWarnings = FALSE)
   }
@@ -229,7 +460,7 @@ buildSubsetCohortDemographic <- function(
     "createSubsetCohort_Person.sql",
     package = "picard"
   )
-  template_sql <- readr::read_file(template_path)
+  
 
   # Prepare metadata - convert NULLs to empty strings for SqlRender template conditions
   # SqlRender checks {@param != ''} so empty strings will work correctly
@@ -246,13 +477,22 @@ buildSubsetCohortDemographic <- function(
     dependsOnCohortIds = c(baseCohortId)
   )
 
+  template_sql <- readr::read_file(template_path) |>
+  SqlRender::render(
+    base_cohort_id = metadata$baseCohortId,
+    min_age = metadata$minAge,
+    max_age = metadata$maxAge,
+    gender_concept_ids = metadata$genderConceptIds,
+    race_concept_ids = metadata$raceConceptIds,
+    ethnicity_concept_ids = metadata$ethnicityConceptIds
+  )
+
   # Write SQL template to file
   writeLines(template_sql, con = sql_path)
+  cli::cli_alert_success("Created composite cohort SQL: {fs::path_rel(sql_path)}")
 
   # Write metadata JSON
   jsonlite::write_json(metadata, path = metadata_path, pretty = TRUE, auto_unbox = TRUE)
-
-  cli::cli_alert_success("Created demographic subset SQL: {fs::path_rel(sql_path)}")
   cli::cli_alert_success("Created metadata file: {fs::path_rel(metadata_path)}")
 
   # Create and return CohortDef object
@@ -315,7 +555,7 @@ buildUnionCohort <- function(
     cohortIds,
     unionRule = "any",
     atLeastN = 2L,
-    cohortsDirectory = NULL,
+    cohortsFolder = here::here("inputs/cohorts"),
     manifest = NULL) {
 
   # Validation
@@ -341,13 +581,8 @@ buildUnionCohort <- function(
     }
   }
 
-  # Set default cohorts directory
-  if (is.null(cohortsDirectory)) {
-    cohortsDirectory <- file.path(getwd(), "inputs", "cohorts")
-  }
-
   # Create derived/union directory if it doesn't exist
-  union_dir <- file.path(cohortsDirectory, "derived", "union")
+  union_dir <- file.path(cohortsFolder, "derived", "union")
   if (!dir.exists(union_dir)) {
     dir.create(union_dir, recursive = TRUE, showWarnings = FALSE)
   }
@@ -364,7 +599,12 @@ buildUnionCohort <- function(
     "createUnionCohort.sql",
     package = "picard"
   )
-  template_sql <- readr::read_file(template_path)
+  template_sql <- readr::read_file(template_path) |>
+    SqlRender::render(
+      cohort_ids = paste(cohortIds, collapse = ", "),
+      union_rule = unionRule,
+      at_least_n = atLeastN
+    )
 
   # Prepare metadata
   metadata <- list(
@@ -379,11 +619,10 @@ buildUnionCohort <- function(
 
   # Write SQL template to file
   writeLines(template_sql, con = sql_path)
+  cli::cli_alert_success("Created composite cohort SQL: {fs::path_rel(sql_path)}")
 
   # Write metadata JSON
   jsonlite::write_json(metadata, path = metadata_path, pretty = TRUE, auto_unbox = TRUE)
-
-  cli::cli_alert_success("Created union cohort SQL: {fs::path_rel(sql_path)}")
   cli::cli_alert_success("Created metadata file: {fs::path_rel(metadata_path)}")
 
   # Create and return CohortDef object
@@ -443,7 +682,7 @@ buildComplementCohort <- function(
     populationCohortId,
     excludeCohortIds,
     complementType = "exclude_any",
-    cohortsDirectory = NULL,
+    cohortsFolder = here::here("inputs/cohorts"),
     manifest = NULL) {
 
   # Validation
@@ -479,13 +718,8 @@ buildComplementCohort <- function(
     }
   }
 
-  # Set default cohorts directory
-  if (is.null(cohortsDirectory)) {
-    cohortsDirectory <- file.path(getwd(), "inputs", "cohorts")
-  }
-
   # Create derived/complement directory if it doesn't exist
-  complement_dir <- file.path(cohortsDirectory, "derived", "complement")
+  complement_dir <- file.path(cohortsFolder, "derived", "complement")
   if (!dir.exists(complement_dir)) {
     dir.create(complement_dir, recursive = TRUE, showWarnings = FALSE)
   }
@@ -502,7 +736,12 @@ buildComplementCohort <- function(
     "createComplementCohort.sql",
     package = "picard"
   )
-  template_sql <- readr::read_file(template_path)
+  template_sql <- readr::read_file(template_path) |>
+  SqlRender::render(
+    population_cohort_id = populationCohortId,
+    exclude_cohort_ids = paste(excludeCohortIds, collapse = ", "),
+    complement_type = complementType
+  )
 
   # Prepare metadata
   metadata <- list(
@@ -517,11 +756,10 @@ buildComplementCohort <- function(
 
   # Write SQL template to file
   writeLines(template_sql, con = sql_path)
+  cli::cli_alert_success("Created composite cohort SQL: {fs::path_rel(sql_path)}")
 
   # Write metadata JSON
   jsonlite::write_json(metadata, path = metadata_path, pretty = TRUE, auto_unbox = TRUE)
-
-  cli::cli_alert_success("Created complement cohort SQL: {fs::path_rel(sql_path)}")
   cli::cli_alert_success("Created metadata file: {fs::path_rel(metadata_path)}")
 
   # Create and return CohortDef object
@@ -547,6 +785,159 @@ buildComplementCohort <- function(
       populationCohortId = populationCohortId,
       excludeCohortIds = as.integer(excludeCohortIds),
       rule = complementType
+    )
+  )
+
+  return(cohort_def)
+}
+
+#' Build a Composite Cohort Definition
+#'
+#' @description
+#' Creates a SQL file and metadata for a composite cohort that combines multiple cohort definitions.
+#' A composite cohort groups subjects who have at least N qualifying events from a set of cohort definitions.
+#' Returns a CohortDef object ready to add to a CohortManifest.
+#'
+#' @param label Character. User-friendly name for the composite (e.g., "Diabetes mellitus").
+#' @param criteriaCohortIds Integer vector. The cohort IDs to include in the composite
+#'   (e.g., c(1, 2, 3) for Type 1 diabetes, Type 2 diabetes, and secondary diabetes).
+#' @param minimumEventCount Integer. Minimum number of distinct cohort events required for a subject
+#'   to qualify for the composite. Default: 1 (any subject with at least 1 event qualifies).
+#' @param eventSelection Character. One of 'First', 'Last', or 'All'. Specifies which event(s) to
+#'   retain as the cohort_start_date and cohort_end_date in the output:
+#'   - 'First': Keep the earliest event (earliest index date)
+#'   - 'Last': Keep the most recent event
+#'   - 'All': Keep all qualifying events per subject (may result in multiple rows per subject)
+#'   Default: 'First'.
+#' @param cohortsDirectory Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.
+#' @param manifest CohortManifest object (optional). If provided, validates that all criteria cohorts exist.
+#'   Recommended to ensure referential integrity. If NULL, a warning is issued.
+#'
+#' @details
+#' Creates three files:
+#' - SQL file: `inputs/cohorts/derived/composite/composite_cohort_{hash}.sql`
+#' - Metadata JSON: Same path with `.json` extension (parameters for execution)
+#' - Hash ensures uniqueness when same criteria are used with different labels
+#'
+#' @return A CohortDef object with cohortType='composite' and dependencies set.
+#'
+#' @examples
+#' # Create a composite cohort for diabetes (any type): Type 1, Type 2, or secondary diabetes
+#' # Keep only subjects with at least 1 event (any diagnosis), using first event as index date
+#'
+#' diabetes_cohort <- buildCompositeCohort(
+#'   label = "Diabetes mellitus (any type)",
+#'   criteriaCohortIds = c(101, 102, 103),
+#'   minimumEventCount = 1,
+#'   eventSelection = "First"
+#' )
+#'
+#' @export
+buildCompositeCohort <- function(
+    label,
+    criteriaCohortIds,
+    minimumEventCount = 1,
+    eventSelection = "First",
+    cohortsFolder = here::here("inputs/cohorts"),
+    manifest = NULL) {
+
+  # Validation
+  checkmate::assert_string(x = label, min.chars = 1)
+  checkmate::assert_integerish(x = criteriaCohortIds, lower = 1, min.len = 1)
+  checkmate::assert_integerish(x = minimumEventCount, len = 1, lower = 1)
+  checkmate::assert_choice(x = eventSelection, choices = c("First", "Last", "All"))
+  checkmate::assert_class(x = manifest, classes = "CohortManifest", null.ok = TRUE)
+
+  # Warn if manifest not provided
+  if (is.null(manifest)) {
+    cli::cli_alert_warning(
+      "manifest parameter not provided. It is STRONGLY RECOMMENDED to pass the manifest \\
+      to validate that criteria cohorts exist. \\
+      Proceeding without validation may create broken dependencies."
+    )
+  } else {
+    # Validate criteria cohorts exist in manifest
+    manifest_ids <- manifest$tabulateManifest()$id
+    missing_ids <- setdiff(criteriaCohortIds, manifest_ids)
+    if (length(missing_ids) > 0) {
+      cli::cli_abort("Criteria cohort IDs not found in manifest: {paste(missing_ids, collapse = ', ')}")
+    }
+  }
+
+  # Create derived/composite directory if it doesn't exist
+  composite_dir <- file.path(cohortsFolder, "derived", "composite")
+  if (!dir.exists(composite_dir)) {
+    dir.create(composite_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  # Generate unique hash from parameters to ensure uniqueness
+  params_for_hash <- list(
+    criteriaCohortIds = sort(criteriaCohortIds),
+    minimumEventCount = minimumEventCount,
+    eventSelection = eventSelection
+  )
+  params_json <- jsonlite::toJSON(params_for_hash, auto_unbox = TRUE)
+  params_hash <- substr(rlang::hash(params_json), 1, 8)
+
+  # Generate file names
+  file_name <- sprintf("composite_cohort_%s", params_hash)
+  sql_path <- file.path(composite_dir, paste0(file_name, ".sql"))
+  metadata_path <- file.path(composite_dir, paste0(file_name, ".json"))
+
+  # Load SQL template
+  template_path <- system.file(
+    "sql",
+    "createCompositeCohort.sql",
+    package = "picard"
+  )
+
+  # Format cohort IDs for SQL IN clause
+  cohort_ids_str <- paste(criteriaCohortIds, collapse = ",")
+
+  template_sql <- readr::read_file(template_path) |>
+  SqlRender::render(
+    criteria_cohort_ids = cohort_ids_str,
+    minimum_event_count = minimumEventCount,
+    event_selection = eventSelection
+  )
+
+  # Prepare metadata
+  metadata <- list(
+    type = "composite",
+    label = label,
+    criteriaCohortIds = as.integer(criteriaCohortIds),
+    minimumEventCount = minimumEventCount,
+    eventSelection = eventSelection,
+    createdAt = Sys.time(),
+    dependsOnCohortIds = as.integer(criteriaCohortIds)
+  )
+
+  # Write SQL template to file
+  writeLines(template_sql, con = sql_path)
+  cli::cli_alert_success("Created composite cohort SQL: {fs::path_rel(sql_path)}")
+
+  # Write metadata JSON
+  jsonlite::write_json(metadata, path = metadata_path, pretty = TRUE, auto_unbox = TRUE)
+  cli::cli_alert_success("Created metadata file: {fs::path_rel(metadata_path)}")
+
+  # Create and return CohortDef object
+  cohort_def <- CohortDef$new(
+    label = label,
+    tags = list(
+      type = "composite",
+      criteriaCohortIds = paste(criteriaCohortIds, collapse = ",")
+    ),
+    filePath = sql_path
+  )
+
+  # Set dependent cohort metadata
+  cohort_def$setCohortType("composite")
+  cohort_def$setDependencies(
+    dependsOnCohortIds = as.integer(criteriaCohortIds),
+    dependencyRule = list(
+      type = "composite",
+      minimumEventCount = minimumEventCount,
+      eventSelection = eventSelection
     )
   )
 

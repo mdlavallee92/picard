@@ -4,7 +4,10 @@
 \alias{importAtlasConceptSets}
 \title{Import CIRCE Concept Sets from ATLAS}
 \usage{
-importAtlasConceptSets(conceptSetsFolderPath, atlasConnection)
+importAtlasConceptSets(
+  conceptSetsFolderPath = here::here("inputs/conceptSets"),
+  atlasConnection
+)
 }
 \arguments{
 \item{conceptSetsFolderPath}{Character. Path to conceptSets folder in the project.}

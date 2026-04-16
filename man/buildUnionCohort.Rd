@@ -9,7 +9,7 @@ buildUnionCohort(
   cohortIds,
   unionRule = "any",
   atLeastN = 2L,
-  cohortsDirectory = NULL,
+  cohortsFolder = here::here("inputs/cohorts"),
   manifest = NULL
 )
 }
@@ -27,10 +27,10 @@ buildUnionCohort(
 
 \item{atLeastN}{Integer. Number of cohorts required (only if unionRule='at_least_n'). Default: 2}
 
-\item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
-
 \item{manifest}{CohortManifest object (optional). If provided, validates that all input cohorts exist.
 Recommended to ensure referential integrity. If NULL, a warning is issued.}
+
+\item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }
 \value{
 A CohortDef object with cohortType='union' and dependencies set.

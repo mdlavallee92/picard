@@ -12,7 +12,7 @@ buildSubsetCohortDemographic(
   genderConceptIds = NULL,
   raceConceptIds = NULL,
   ethnicityConceptIds = NULL,
-  cohortsDirectory = NULL,
+  ccohortsFolder = here::here("inputs/cohorts"),
   manifest = NULL
 )
 }
@@ -31,10 +31,10 @@ buildSubsetCohortDemographic(
 
 \item{ethnicityConceptIds}{Numeric vector. Ethnicity concept IDs to include. NULL = all. Default: NULL}
 
-\item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
-
 \item{manifest}{CohortManifest object (optional). If provided, validates that base cohort exists.
 Recommended to ensure referential integrity. If NULL, a warning is issued.}
+
+\item{cohortsDirectory}{Character. Path to inputs/cohorts/. Uses study hierarchy if not provided.}
 }
 \value{
 A CohortDef object with cohortType='subset' and dependencies set.
