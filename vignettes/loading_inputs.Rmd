@@ -55,11 +55,60 @@ This launches a Shiny app where you can add/edit cohort metadata without touchin
 
 ### Step 2: Import Cohort Definitions from ATLAS
 
-Connect to ATLAS and download cohort JSON definitions:
+#### Setting Up ATLAS Credentials
+
+Before connecting to ATLAS, configure your credentials in your `.Renviron` file. First, view the required format:
 
 ```{r eval = FALSE}
-# Set up ATLAS connection (credentials from .Renviron or direct)
-atlasConn <- setAtlasConnection()
+templateatlaScredentials()
+```
+
+This shows the four credentials you need to set:
+
+- **`atlasBaseUrl`**: Base URL to your ATLAS WebAPI (e.g., `https://organization-atlas.com/WebAPI`)
+- **`atlasAuthMethod`**: Authentication method (e.g., `ad` for Active Directory)
+- **`atlasUser`**: Your ATLAS username or email
+- **`atlasPassword`**: Your ATLAS password
+
+**Option A — Store in `.Renviron`**
+
+```{r eval = FALSE}
+usethis::edit_r_environ()
+```
+
+Add these lines with your actual values:
+
+```
+atlasBaseUrl='https://organization-atlas.com/WebAPI'
+atlasAuthMethod='ad'
+atlasUser='atlas.user@company.com'
+atlasPassword='YourPassword'
+```
+
+> **Security note:** Never commit `.Renviron` to version control. Confirm it is listed in `.gitignore`.
+
+**Option B — Store in `keyring` (recommended)**
+
+The `keyring` package keeps credentials encrypted on your system:
+
+```{r eval = FALSE}
+# Store each credential (a prompt asks for the value)
+keyring::key_set(service = "picard", username = "atlasBaseUrl")
+keyring::key_set(service = "picard", username = "atlasAuthMethod")
+keyring::key_set(service = "picard", username = "atlasUser")
+keyring::key_set(service = "picard", username = "atlasPassword")
+
+# Verify
+keyring::key_list(service = "picard")
+```
+
+Then connect with:
+
+```{r eval = FALSE}
+atlasConn <- setAtlasConnection(useKeyring = TRUE)
+```
+
+#### Connecting and Importing
 
 # Import specific cohorts from ATLAS
 importAtlasCohorts(
@@ -90,8 +139,8 @@ manifest_df <- cm$getManifest()
 summary_df <- cm$tabulateManifest()
 
 # Query specific cohorts
-cohort_1 <- cm$getCohortById(id = 1)
-cohorts_by_tag <- cm$getCohortsByTag(tagString = "category: Primary")
+cohort_1 <- cm$queryCohortsByIds(ids = 1L)
+cohorts_by_tag <- cm$queryCohortsByTag(tagStrings = "category: Primary")
 ```
 
 ### Step 5: Apply Functions for Cohort Operations
@@ -143,9 +192,6 @@ ckd_given_t2d <- buildSubsetCohortTemporal(
   temporalStartOffset = 365, # Within 1 year before CKD
   manifest = cm
 )
-
-# Add the dependent cohort to the manifest
-cm$addDependentCohort(ckd_given_t2d)
 ```
 
 **Parameters:**
@@ -166,8 +212,6 @@ ckd_males <- buildSubsetCohortDemographic(
   genderConceptIds = c(8507),        # 8507 = Male
   manifest = cm
 )
-
-cm$addDependentCohort(ckd_males)
 ```
 
 **Parameters:**
@@ -185,8 +229,6 @@ ckd_adults <- buildSubsetCohortDemographic(
   minAge = 18,
   manifest = cm
 )
-
-cm$addDependentCohort(ckd_adults)
 ```
 
 ### Union and Complement Cohorts
@@ -201,8 +243,6 @@ ckd_or_t2d <- buildUnionCohort(
   cohortIds = c(1, 2),    # Union of cohorts 1 and 2
   manifest = cm
 )
-
-cm$addDependentCohort(ckd_or_t2d)
 ```
 
 **Complement:** All patients NOT in a cohort:
@@ -213,8 +253,6 @@ no_ckd <- buildComplementCohort(
   cohortId = 1,           # Exclude cohort 1
   manifest = cm
 )
-
-cm$addDependentCohort(no_ckd)
 ```
 
 ### Visualizing Dependencies
@@ -244,6 +282,8 @@ Here's a full example combining base and dependent cohorts:
 cm <- loadCohortManifest()
 
 # 2. Create dependent cohorts
+# Note: build* functions require the manifest and automatically register
+# the new cohort — no separate addDependentCohort() call needed.
 ckd_given_t2d <- buildSubsetCohortTemporal(
   label = "CKD given prior T2D",
   baseCohortId = 1,
@@ -252,7 +292,6 @@ ckd_given_t2d <- buildSubsetCohortTemporal(
   temporalStartOffset = 365,
   manifest = cm
 )
-cm$addDependentCohort(ckd_given_t2d)
 
 ckd_males <- buildSubsetCohortDemographic(
   label = "CKD Males",
@@ -260,7 +299,6 @@ ckd_males <- buildSubsetCohortDemographic(
   genderConceptIds = c(8507),
   manifest = cm
 )
-cm$addDependentCohort(ckd_males)
 
 ckd_adults <- buildSubsetCohortDemographic(
   label = "CKD Adults",
@@ -268,7 +306,6 @@ ckd_adults <- buildSubsetCohortDemographic(
   minAge = 18,
   manifest = cm
 )
-cm$addDependentCohort(ckd_adults)
 
 # 3. Visualize dependencies
 report <- visualizeCohortDependencies(cm)
@@ -282,11 +319,112 @@ counts <- cm$retrieveCohortCounts()
 print(counts)
 ```
 
-**Note:** Dependent cohorts are generated using R code, not SQL files. When you call `cm$generateCohorts()`, Picard executes the logic for all dependent cohorts automatically.
+**Note:** Dependent cohorts are generated using R code, not SQL files. When you call `cm$generateCohorts()`, Picard executes the logic for all dependent cohorts automatically. The `manifest` parameter is required by all `build*` functions — it validates parent cohorts and registers the new cohort in the manifest automatically.
 
+## Managing the Manifest Mid-Cycle
 
+Study development is rarely linear. Cohorts get revised in ATLAS, new definitions get added mid-analysis, or old definitions are retired. Picard provides three methods to keep the manifest in sync with reality without reloading from scratch.
 
-The concept set workflow is similar to cohorts:
+### Checking Manifest Health
+
+Before syncing, get a quick status overview:
+
+```{r eval = FALSE}
+# Full status table: id, label, status, deleted_at, file_exists
+cm$validateManifest()
+
+# Summary counts
+cm$getManifestStatus()
+#> $active_count
+#> [1] 12
+#> $missing_count    # active records whose file is gone
+#> [1] 1
+#> $deleted_count    # soft-deleted records
+#> [1] 2
+#> $next_available_id
+#> [1] 15
+```
+
+### Syncing Files on Disk with the Manifest
+
+`syncManifest()` reconciles the SQLite manifest against the `json/` and `sql/` directories on disk in a single call:
+
+- **New files** found on disk are added as new manifest entries
+- **Active records** whose file has disappeared are soft-deleted (status = `'deleted'`)
+- **Existing files** whose SQL hash has changed are updated in the manifest
+
+```{r eval = FALSE}
+# Sync the manifest against inputs/cohorts/json/ and inputs/cohorts/sql/
+sync_results <- cm$syncManifest()
+
+# Returns a data frame: id, label, action
+# action is one of: "added", "hash_updated", "missing_flagged", "unchanged"
+print(sync_results)
+```
+
+This is the go-to method when you've:
+
+- Added new cohorts to ATLAS and re-run `importAtlasCohorts()`
+- Edited a cohort SQL file directly
+- Deleted a cohort file and want the manifest to reflect that
+
+`syncManifest()` only touches `json/` and `sql/` source cohorts — derived cohorts managed by `build*` functions are left untouched.
+
+### Removing Cohorts from the Manifest
+
+When a cohort is no longer needed, soft-delete it to preserve the audit trail:
+
+```{r eval = FALSE}
+# Soft-delete: marks status = 'deleted', keeps the record
+cm$deleteCohort(id = 5, reason = "Replaced by updated phenotype")
+```
+
+For cases where you need to permanently remove a record (e.g., a test cohort that was never used), use `permanentlyDeleteCohort()`. This requires an explicit confirmation to prevent accidents:
+
+```{r eval = FALSE}
+# Permanent removal — requires confirm = TRUE
+cm$permanentlyDeleteCohort(id = 5, confirm = TRUE)
+```
+
+### Purging Deleted Cohort Data from the DBMS
+
+Soft-deleting a cohort only updates the SQLite manifest — the cohort rows still exist in your DBMS cohort table. Use `cleanCohortTable()` to purge them:
+
+```{r eval = FALSE}
+# Requires executionSettings to be set
+cm$setExecutionSettings(settings)
+
+# Deletes rows from the DBMS cohort and checksum tables for all
+# status = 'deleted' cohorts, then marks them as 'purged' in SQLite
+purge_results <- cm$cleanCohortTable()
+print(purge_results)   # id, label for each purged cohort
+```
+
+After `cleanCohortTable()`, those manifest records are marked `'purged'` and will not be processed again on subsequent calls — the method is safe to call repeatedly.
+
+### Typical Mid-Cycle Workflow
+
+```{r eval = FALSE}
+# 1. After updating cohorts in ATLAS and re-importing
+synced <- cm$syncManifest()
+
+# 2. Review what changed
+synced[synced$action != "unchanged", ]
+
+# 3. Retire a cohort that is no longer needed
+cm$deleteCohort(id = 7, reason = "Out of scope for v2")
+
+# 4. Purge the retired cohort's data from the DBMS
+cm$setExecutionSettings(settings)
+cm$cleanCohortTable()
+
+# 5. Re-generate to pick up ATLAS revisions
+cm$generateCohorts()
+```
+
+## Working with Concept Sets
+
+The concept set workflow is similar to cohorts.
 
 ### Step 1: Create or Update Concept Sets Load File (Optional)
 
@@ -335,15 +473,12 @@ csm <- loadConceptSetManifest()
 Examine concept sets in your study:
 
 ```{r eval = FALSE}
-# View all concept sets
-manifest_df <- csm$getManifest()
+# Tabular view of all concept sets
+manifest_df <- csm$tabulateManifest()
 
-# Get formatted summary
-summary_df <- csm$tabulateManifest()
-
-# Query by criteria
-concept_set <- csm$getConceptSetById(id = 1)
-drug_expo <- csm$getConceptSetsByTag(tagString = "domain: drug_exposure")
+# Query by criteria (returns data frames)
+concept_set <- csm$queryConceptSetsByIds(1L)
+drug_expo <- csm$queryConceptSetsByTag(tagStrings = "domain: drug_exposure")
 ```
 
 ### Step 5: Apply Functions for Concept Set Operations

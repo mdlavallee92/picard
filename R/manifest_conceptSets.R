@@ -33,9 +33,12 @@
 #'
 #' **Post-Load:**
 #' After loading, use manifest methods to query concept sets:
-#' - `getConceptSetById(id)` - Get by database ID
-#' - `getConceptSetsByTag(key, value)` - Get by metadata tag
-#' - `grabConceptSetById(id)` - Get ConceptSetDef object
+#' - `queryConceptSetsByIds(ids)` - Query by one or more IDs; returns data frame
+#' - `queryConceptSetsByTag(tagStrings, match)` - Query by tag(s); returns data frame
+#' - `queryConceptSetsByLabel(labels, matchType)` - Query by label(s); returns data frame
+#' - `getConceptSetById(id)` - Get ConceptSetDef object by ID
+#' - `getConceptSetsByTag(tagStrings, match)` - Get ConceptSetDef objects by tag(s)
+#' - `tabulateManifest()` - Tabular view of all concept sets
 #'
 #' @export
 #'

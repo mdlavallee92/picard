@@ -16,6 +16,7 @@ Parameters:
 {DEFAULT @minimum_event_count = 1}
 {DEFAULT @event_selection = 'First'}
 
+DELETE FROM @output_table WHERE cohort_definition_id = @output_cohort_id;
 INSERT INTO @output_table (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date)
 SELECT
   @output_cohort_id AS cohort_definition_id,

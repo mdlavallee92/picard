@@ -120,7 +120,7 @@ UlyssesStudy <- R6::R6Class(
         private$.initConfigFile()
         private$.initQuarto()
         private$.initMainExec()
-        private$.initTestMainExec()
+        private$.initLoadingInputs()   # add after .initTestMainExec()
         private$.initAgent()
         
         # Step 4: Initialize git
@@ -310,18 +310,18 @@ UlyssesStudy <- R6::R6Class(
       invisible(NULL)
     },
 
-    .initTestMainExec = function() {
+    .initLoadingInputs = function() {
+      repoPath <- private$.getRepoPath()
       tryCatch({
-        addTestMainFile(
-          repoName = private$.repoName,
-          repoFolder = private$.repoFolder,
-          toolType = private$.toolType,
-          configBlocks = private$.execOptions$dbConnectionBlocks,
-          studyName = private$.studyMeta$studyTitle
-        )
-        cli::cli_alert_success("Created test flight script: {.file {fs::path(private$.repoName, 'extras/test_main.R')}}")
+        loadingInputsR <- fs::path_package("picard", "templates/loadingInputs.R") |>
+          readr::read_file() |>
+          glue::glue(.open = "{", .close = "}")
+
+        dest <- fs::path(repoPath, "extras", "loadingInputs.R")
+        readr::write_file(x = loadingInputsR, file = dest)
+        cli::cli_alert_success("Created loading inputs script: {.file {fs::path_rel(dest)}}")
       }, error = function(e) {
-        cli::cli_alert_danger("Failed to initialize test execution file: {e$message}")
+        cli::cli_alert_danger("Failed to initialize loading inputs file: {e$message}")
         stop(e)
       })
       invisible(NULL)

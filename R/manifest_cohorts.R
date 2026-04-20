@@ -166,7 +166,9 @@ loadCohortManifest <- function(cohortsFolderPath = here::here("inputs/cohorts"),
           
           # Find which files are NOT in the database
           existing_file_paths <- existing_cohorts$filePath
-          new_files <- setdiff(all_files, existing_file_paths)
+          # make sure no new relative paths are accidentally treated as new if they match an existing absolute path
+          new_files_mask <- !(fs::path_rel(all_files) %in% existing_file_paths) 
+          new_files <- all_files[new_files_mask]  # keep absolute for CohortDef$new()
           
           # For each new file, create CohortDef and add to manifest
           if (length(new_files) > 0) {

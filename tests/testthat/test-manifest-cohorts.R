@@ -204,7 +204,7 @@ test_that("loadCohortManifest enriches tags from cohortsLoad.csv when present", 
   readr::write_csv(load_csv, file.path(temp_dir, "cohortsLoad.csv"))
 
   manifest <- loadCohortManifest(cohortsFolderPath = temp_dir, verbose = FALSE)
-  cohort <- manifest$grabCohortById(1)
+  cohort <- manifest$getCohortById(1)
 
   # Tags should be enriched from cohortsLoad
   expect_true(!is.null(cohort$tags$category) || nchar(cohort$formatTagsAsString()) > 0)
