@@ -360,7 +360,7 @@ buildSubsetCohortTemporal <- function(
   )
 
   manifest$addDependentCohort(cohort_def)
-  return(cohort_def)
+  invisible(cohort_def)
 }
 
 
@@ -508,7 +508,7 @@ buildSubsetCohortDemographic <- function(
   )
 
   manifest$addDependentCohort(cohort_def)
-  return(cohort_def)
+  invisible(cohort_def)
 }
 
 #' Build a Union Cohort Definition
@@ -627,7 +627,7 @@ buildUnionCohort <- function(
   )
 
   manifest$addDependentCohort(cohort_def)
-  return(cohort_def)
+  invisible(cohort_def)
 }
 
 
@@ -761,7 +761,7 @@ buildComplementCohort <- function(
   )
 
   manifest$addDependentCohort(cohort_def)
-  return(cohort_def)
+  invisible(cohort_def)
 }
 
 #' Build a Composite Cohort Definition
@@ -907,5 +907,5 @@ buildCompositeCohort <- function(
   )
 
   manifest$addDependentCohort(cohort_def)
-  return(cohort_def)
+  invisible(cohort_def)
 }
