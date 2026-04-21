@@ -312,6 +312,7 @@ UlyssesStudy <- R6::R6Class(
 
     .initLoadingInputs = function() {
       repoPath <- private$.getRepoPath()
+      studyName <- private$.studyMeta$studyTitle
       tryCatch({
         loadingInputsR <- fs::path_package("picard", "templates/loadingInputs.R") |>
           readr::read_file() |>

@@ -455,7 +455,9 @@ makeSrcFile <- function(
       fileName = fileName,
       author = author,
       description = description,
-      studyName = studyName
+      studyName = studyName,
+      .open = "<<",
+      .close = ">>"
     )
 
   # Display message

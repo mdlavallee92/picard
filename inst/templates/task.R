@@ -33,6 +33,9 @@ outputFolder <- setOutputFolder(
   taskName = "{taskName}"
 )
 
+# get cohort manifest
+cm <- loadCohortManifest()
+
 ##### Note: Add code that identifies task settings like cohorts or time windows
 
 # E. Script ------------------
